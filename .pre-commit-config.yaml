@@ -1,0 +1,27 @@
+# because we only want to use already installed
+default_stages: [pre-commit, pre-push]
+fail_fast: false
+repos:
+  # A local hook can run local scripts when language is set to system
+  - repo: local
+    hooks:
+      - id: lint
+        name: Lint staged files
+        entry: uv run ruff check
+        language: system
+        # run against all python and notebook files
+        types_or: [python, jupyter]
+        verbose: true
+      - id: check-format
+        name: Check if files are formatted correctly
+        # only show the diff and exit (no auto fixes)
+        entry: uv run ruff format --diff
+        language: system
+        types_or: [python, jupyter]
+        verbose: true
+      - id: add-license-headers
+        name: Add License Headers
+        entry: uv run python .hooks/licenseheaders.py src --changed-only
+        language: system
+        always_run: true
+        pass_filenames: false

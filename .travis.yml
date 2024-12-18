@@ -1,0 +1,29 @@
+language: python
+python: # TODO: Run on more versions
+  - '3.10'
+
+branches:
+  only:
+    - main
+
+# NOTE: Travis activates a virtualenv by default. Installing Poetry directly via
+# pip into this virtualenv fails because Poetry builds its own virtualenv.
+# instead, install Poetry via pipx into an isolated environment, and from there
+# the rest of the dependencies via Poetry
+before_install:
+  - pip install uv==0.4.17
+
+install:
+  - make install_ci
+
+script:
+  - make lint
+  - make check_types
+  - make test
+
+cache: pip
+
+notifications:
+  email:
+    on_success: never
+    on_failure: always
