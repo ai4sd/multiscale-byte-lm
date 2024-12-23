@@ -1,0 +1,19 @@
+io:
+  name_model: my-model
+  output_dir: tests/e2e/trainer/outputs # static
+  num_models_to_save: 2
+  validate_amount: 10
+  log_train_loss_amount: 20
+params:
+  input_seq_len: 1
+  hidden_size: 20
+  output_size: 1
+train:
+  # There are 10_000 elements in the training set
+  target_elements: 5_870
+  batch_size: 8
+  shuffle_train: true
+  learning_rate: 0.001
+  gradient_clipping: 0.5
+  gradient_accumulate_every: 10
+  target_elements_strategy: batch

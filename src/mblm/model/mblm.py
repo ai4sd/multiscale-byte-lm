@@ -21,7 +21,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
 
 import math
-from typing import cast
+from typing import Literal, cast, overload
 
 import torch
 import torch.nn.functional as F  # noqa: N812
@@ -31,14 +31,14 @@ from torch import nn
 from torch.utils.checkpoint import checkpoint
 from tqdm import tqdm
 
-from mblm.model.config import MBLMModelConfig
+from mblm.model.config import MBLMModelConfig, MBLMReturnType
 from mblm.model.utils import ByteToUtf8Streamer, RoPE, gumbel_sample, top_k
 
 """
 Wording:
     - A hierarchy consists of n stages
-    - Stage 1 corresponds to to the global model (Yu et al., 2023)
-    - Stage 2 to n corresponds to local models 2 to n
+    - Stage 1 to n-1 corresponds to global models
+    - Stage n corresponds to the local model
 Inline comment abbreviations:
     -------------------------------------------------------------------
     Global notation
@@ -46,16 +46,8 @@ Inline comment abbreviations:
     - V        Vocabulary size (256 for bytes)
     - B        Batch size
     - L        The input sequence length
-    - S_n      The sequence length/number of patches at any stage n
+    - P_n      The sequence length/number of patches at any stage n
     - D_n      The model dimension at any stage n
-    -------------------------------------------------------------------
-    Derived example notation
-    -------------------------------------------------------------------
-    - D_1      Global model dimension
-    - S_1      Global model sequence length (maximum)
-    - S_1'     Unpadded / actual global model sequence length: S_1' <= S_1
-    - D_2      Dimension of first local model at stage 2 in the hierarchy
-    - S_2      Patch size of first local model at stage 2 in the hierarchy
 """
 
 
@@ -108,27 +100,27 @@ class MBLM(nn.Module):
                     )
                 )
 
-        most_local_dim = self.model_dims[-1]  # D_n
+        local_dim = self.model_dims[-1]  # D_n
 
         # token embeddings are created in reverse order from local to global:
         # [(V, D_n), ..., (V, D_1)]
         self.token_embs_rev = nn.ModuleList(
-            [nn.Embedding(cfg.num_tokens, most_local_dim, padding_idx=self.pad_token_id)]
+            [nn.Embedding(cfg.num_tokens, local_dim, padding_idx=self.pad_token_id)]
         )
 
         patch_size = 1
         for dim_out, seq_len in zip(
-            # all except the most local model
+            # all except the local model
             reversed(self.model_dims[:-1]),  # (D_n-1, ..., D_1)
-            reversed(self.seq_lens[1:]),  # (S_2, ..., S_n)
+            reversed(self.seq_lens[1:]),  # (P_2, ..., P_n)
         ):
             patch_size *= seq_len
             self.token_embs_rev.append(
                 nn.Sequential(
-                    nn.Embedding(cfg.num_tokens, most_local_dim, padding_idx=self.pad_token_id),
+                    nn.Embedding(cfg.num_tokens, local_dim, padding_idx=self.pad_token_id),
                     Rearrange("... r d -> ... (r d)"),
-                    nn.LayerNorm(patch_size * most_local_dim),
-                    nn.Linear(patch_size * most_local_dim, dim_out),
+                    nn.LayerNorm(patch_size * local_dim),
+                    nn.Linear(patch_size * local_dim, dim_out),
                     nn.LayerNorm(dim_out),
                 )
             )
@@ -156,7 +148,7 @@ class MBLM(nn.Module):
 
             self.to_next_stage_proj.append(proj)
 
-        self.to_logits = nn.Linear(most_local_dim, cfg.num_tokens)
+        self.to_logits = nn.Linear(local_dim, cfg.num_tokens)
 
     @torch.inference_mode()
     def generate(
@@ -202,7 +194,7 @@ class MBLM(nn.Module):
 
         sequence = prime
         for _ in iterator:
-            logits = self.forward(sequence)[:, -1]
+            logits = self.forward(sequence, return_type=MBLMReturnType.LOGITS)[:, -1]
             logits = top_k(logits, thres=filter_thres)
             sampled = gumbel_sample(logits, dim=-1, temperature=temperature)
             sequence = torch.cat((sequence, rearrange(sampled, "b -> b 1")), dim=-1)
@@ -236,19 +228,36 @@ class MBLM(nn.Module):
 
         return self.to_logits(tokens)
 
+    @overload
     def forward(
         self,
         input_ids: torch.Tensor,
-        return_loss: bool = False,
+        *,
+        return_type: Literal[MBLMReturnType.LOSS_LOGITS] = ...,
         loss_mask: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor]: ...
+    @overload
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        *,
+        return_type: Literal[MBLMReturnType.LOSS, MBLMReturnType.LOGITS] = ...,
+        loss_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor: ...
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        *,
+        return_type: MBLMReturnType = MBLMReturnType.LOSS,
+        loss_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """
-        A single forward pass
+        A single forward pass.
 
         Args:
             input_ids: The token ids as torch.LongTensor in shape (B, L)
-            return_loss: If `True`, return the loss, else, return predictions. Predictions
-                will have the same shape (B, L) as `input_ids`. `False` by default
+            return_type: What to return - the loss, the logits or both.
             loss_mask: An optional masking tensor that enables interpolation between
                 self-supervised and supervised learning. It determines which tokens in the
                 prediction should contribute to the loss with what weight and should have
@@ -275,49 +284,49 @@ class MBLM(nn.Module):
         flat_seq_len = input_ids.shape[-1]
 
         # if the input is given as (B, L), reshape and distribute it among the
-        # local hierarchy sequence lengths, filling up the most local dimensions
-        # first. padding is applied so that the output shape is (B, S_1', S_2,
-        # ..., S_n). for the largest possible L == prod(seq_lens), S_1' = S_1.
-        # in all other cases, S_1' < S_1, meaning no padding is applied to the
-        # global sequence S_1.
+        # hierarchy sequence lengths, filling up the inner dimensions
+        # first. padding is applied so that the output shape is (B, P_1', P_2,
+        # ..., P_n). for the largest possible L == prod(seq_lens), P_1' = P_1.
+        # in all other cases, P_1' < P_1, meaning no padding is applied to the
+        # global sequence P_1.
         #
-        # here's two examples for a model model (S_1, S_2, S_3) = (5, 4, 3):
+        # here's two examples for a model model (P_1, P_2, P_3) = (5, 4, 3):
         #
-        # input: (B, L) = (1, 13), output: (B, S_1', S_2, S_3) = (1, 2, 4, 3)
-        # input: (B, L) = (1, 60), output: (B, S_1,  S_2, S_3) = (1, 5, 4, 3)
+        # input: (B, L) = (1, 13), output: (B, P_1', P_2, P_3) = (1, 2, 4, 3)
+        # input: (B, L) = (1, 60), output: (B, P_1,  P_2, P_3) = (1, 5, 4, 3)
         #
-        # in the 2nd example, L = prod(seq_lens) = 5 * 4 * 3 = 60 = S_1 = S_1'
+        # in the 2nd example, L = prod(seq_lens) = 5 * 4 * 3 = 60 = P_1 = P_1'
         if flattened_dims:
-            # pad/fill up all local sequence lengths
-            local_seq_lens = self.seq_lens[1:]
-            multiple_of = math.prod(local_seq_lens)
+            # pad/fill up all inner sequence lengths (all except most global)
+            inner_seq_lens = self.seq_lens[1:]
+            multiple_of = math.prod(inner_seq_lens)
             # use the complement of modulo - the difference to the next multiple
             # of multiple_of - to infer the right padding length
             padding = -flat_seq_len % multiple_of
             input_ids = F.pad(input_ids, (0, padding), value=self.pad_token_id)
-            # reshape and infer the S_1' dimension
-            input_ids = input_ids.reshape(batch_size, -1, *local_seq_lens)
+            # reshape and infer the P_1' dimension
+            input_ids = input_ids.reshape(batch_size, -1, *inner_seq_lens)
 
-        # make sure the above condition holds, i.e., S_1' <= S_1
-        _S_1_prime, _S_1 = input_ids.shape[1], self.seq_lens[0]  # noqa: N806
+        # make sure the above condition holds, i.e., P_1' <= P_1
+        _P_1_prime, _P_1 = input_ids.shape[1], self.seq_lens[0]  # noqa: N806
         fixed_global_patch_encoding = isinstance(self.patch_pos_embs[0], nn.Embedding)
         if fixed_global_patch_encoding:
-            assert _S_1_prime <= _S_1, (
+            assert _P_1_prime <= _P_1, (
                 f"Because you are using a fixed global patch embedding, "
-                f"the input sequence length ({_S_1_prime}) "
-                f"must be less than the first tuple element of seq_lens ({_S_1})"
+                f"the input sequence length ({_P_1_prime}) "
+                f"must be less than the first tuple element of seq_lens ({_P_1})"
             )
 
         token_embs_at_stages = [torch.empty(0) for _ in range(self.num_stages)]
         # at this stage, we're working with nested ids - hence, embed the bytes
-        # for each stage in reverse order, starting from the most local and
-        # ending at the global model. at each stage, add positional embeddings
-        # and rerrange the input shape to match the dimension of the previous
+        # for each stage in reverse order, starting from the local and ending at
+        # the most global model. at each stage, add positional embeddings and
+        # rerrange the input shape to match the dimension of the previous
         # (local) stage. with three stages:
         #
-        # [0]: (B, S_1', D_1)
-        # [1]: (B, S_1', S_2, D_2)
-        # [2]: (B, S_1', S_2, S_3, D_3)
+        # [0]: (B, P_1', D_1)
+        # [1]: (B, P_1', P_2, D_2)
+        # [2]: (B, P_1', P_2, P_3, D_3)
         for stage_idx, pos_emb, token_emb in zip(
             range(self.num_stages - 1, -1, -1),
             reversed(self.patch_pos_embs),
@@ -333,8 +342,8 @@ class MBLM(nn.Module):
                 stage_token_embs = stage_token_embs + positions
             elif isinstance(pos_emb, RoPE):
                 batch, *seq_lens, hidden_dim = stage_token_embs.shape
-                # RoPE expects as input [batch, seq_len, num_heads, head_dim] -> pack to artificial
-                # batch dim and add an empty head dimension
+                # RoPE expects as input [batch, seq_len, num_heads, head_dim] ->
+                # pack to artificial batch dim and add an empty head dimension
                 stage_token_embs = stage_token_embs.view(-1, seq_lens[-1], 1, hidden_dim)
                 stage_token_embs = pos_emb.forward(stage_token_embs)
                 # reshape back to input
@@ -365,9 +374,9 @@ class MBLM(nn.Module):
 
             # the first dimension ("*"), after packing, corresponds to the
             # number of patches in the current stage (which can be considered a
-            # batch for the stage because they are processed in parallel). in a
-            # sense, the sequence length of the global model becomes the batch
-            # size of the first local model, and so on
+            # batch for the stage because they are processed in parallel). the
+            # patch size of model n-1 becomes the batch size of model n, and so
+            # on
             stage_tokens, ps = pack([stage_emb_tokens], "* s d")
             patch_batch = stage_tokens.shape[0]  # "*" in the pack operation above
 
@@ -385,12 +394,12 @@ class MBLM(nn.Module):
                     value=0,
                 )
                 stage_tokens = stage_tokens + prev_stage_tokens_repr
-            # stage_tokens is now [B, S_n, D_n]. for the first stage, B is the
+            # stage_tokens is now [B, P_n, D_n]. for the first stage, B is the
             # actual batch size whereas for the other stages, the batch size
             # corresponds to the sequence length of the previous hierarchy
             # stage
 
-            # skip checkpointing for the first (=global) stage
+            # skip checkpointing for the first global stage
             if checkpoint_chunk is None:
                 attended = model.forward(stage_tokens)
 
@@ -422,12 +431,12 @@ class MBLM(nn.Module):
             # restore the initial shape
             attended = unpack(attended, ps, "* s d")[0]
             # project for next stage in the hierarchy, dropping the last patch:
-            # from (..., S_n, D_n) to (..., S_n, S_n+1, D_n+1)
+            # from (..., P_n, D_n) to (..., P_n, P_n+1, D_n+1)
             prev_stage_tokens_repr = proj(attended[..., :-1, :])
 
-        logits = self.to_logits.forward(attended)  # (B, S_1', S_2, ..., 1 + S_n, V)
+        logits = self.to_logits.forward(attended)  # (B, P_1', P_2, ..., 1 + P_n, V)
 
-        if not return_loss:
+        if return_type == MBLMReturnType.LOGITS:
             if flattened_dims:
                 # drop the start tokens and combine inner dimensions into one
                 logits = rearrange(logits[..., 1:, :], "b ... v -> b (...) v")
@@ -459,7 +468,7 @@ class MBLM(nn.Module):
         # same shape as targets with 0 everywhere where the token equals the pad
         # token. this assumes the same pad token is used for intra-batch padding
         # (ensured by the datasets/dataloaders) as well as patch-padding
-        # (ensured by bootstrapping mmb with the right pad token id)
+        # (ensured by bootstrapping MBLM with the right pad token id)
         loss_tensor: torch.Tensor = F.cross_entropy(
             preds,  # (B, V, L)
             targets,  # (B, L)
@@ -485,5 +494,8 @@ class MBLM(nn.Module):
             # special case when the loss is zero across target elements - should
             # theoretically never happen
             print("Edge case detected, loss is nan")
-            return torch.zeros_like(loss)
-        return loss
+            loss = torch.zeros_like(loss)
+
+        if return_type == MBLMReturnType.LOSS:
+            return loss
+        return loss, logits

@@ -1,0 +1,31 @@
+{
+  "info": {
+    "split": "val",
+    "license": "Creative Commons Attribution (CC BY 4.0)",
+    "version": "1.0",
+    "date": "2/14/2017"
+  },
+  "questions": [
+    {
+      "image_index": 0,
+      "program": [
+        { "inputs": [], "function": "scene", "value_inputs": [] },
+        { "inputs": [0], "function": "filter_size", "value_inputs": ["large"] },
+        {
+          "inputs": [1],
+          "function": "filter_material",
+          "value_inputs": ["metal"]
+        },
+        { "inputs": [2], "function": "unique", "value_inputs": [] },
+        { "inputs": [3], "function": "same_shape", "value_inputs": [] },
+        { "inputs": [4], "function": "exist", "value_inputs": [] }
+      ],
+      "question_index": 0,
+      "image_filename": "CLEVR_val_000000.png",
+      "question_family_index": 39,
+      "split": "val",
+      "answer": "cylinder",
+      "question": "The longest question in clevr (across modes) has a byte/ASCII length of 205. This here is a dummy question of the same length to ensure we test clevr with the max length. Filler words: abcdefghijklmnopqrst"
+    }
+  ]
+}
