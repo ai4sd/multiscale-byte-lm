@@ -1,0 +1,21 @@
+name: Deploy to PyPI
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+      - name: Set up Python
+        run: uv python install
+      - name: Set up env with deps + light verification
+        run: uv run pytest tests/unit
+      - name: Build
+        run: uv build
+      - name: Publish
+        run: uv publish --publish-url https://upload.pypi.org/legacy/ --username __token__ --password $PYPI_PASSWORD
