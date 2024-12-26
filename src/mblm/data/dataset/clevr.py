@@ -24,7 +24,7 @@ import json
 import os
 import random
 from pathlib import Path
-from typing import Generator, Literal, TypedDict
+from typing import Generator, Literal, TypedDict, overload
 
 import torch
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -43,10 +43,18 @@ from mblm.data.utils import (
 )
 
 
+class ClevrFunction(TypedDict):
+    function: str
+    inputs: list[int]
+    value_inputs: list[str]
+
+
 class ClevrQuestion(TypedDict):
     question: str
     answer: str
     image_filename: str
+    question_family_index: int
+    program: list[ClevrFunction]
 
 
 class ClevrOptionalArgs(BaseModel):
@@ -131,6 +139,25 @@ class Clevr(DistributedDataset[BatchWithLossMask]):
         "sphere": "P",
         "yellow": "Q",
         "yes": "R",
+    }
+
+    QUESTION_TYPES: dict[str, str] = {
+        "exist": "exists",
+        "count": "count",
+        # compare integer
+        "equal_integer": "compare_integer",
+        "less_than": "compare_integer",
+        "greater_than": "compare_integer",
+        # query attribute
+        "query_color": "query_attribute",
+        "query_material": "query_attribute",
+        "query_size": "query_attribute",
+        "query_shape": "query_attribute",
+        # compare attribute
+        "equal_size": "compare_attribute",
+        "equal_material": "compare_attribute",
+        "equal_shape": "compare_attribute",
+        "equal_color": "compare_attribute",
     }
 
     # common (transposed) image shape for all modes
@@ -218,17 +245,14 @@ class Clevr(DistributedDataset[BatchWithLossMask]):
             image_tensor = image.to_tensor().flatten()
         return image_tensor
 
-    def get_sample_raw(self, from_idx: int) -> tuple[str, str, ImagePipeline]:
+    def get_sample_raw(self, from_idx: int) -> ClevrQuestion:
         """
         Get a raw sample as a (question, answer, image) tuple with no
         tokenization or preprocessing applied.
         """
         if self.mode == ModelMode.TEST:
             raise ValueError("Clevr dataset does not support testing!")
-        answer_str = self.entries[from_idx]["answer"]
-        question_str = self.entries[from_idx]["question"]
-        image_path = self.images_root / self.entries[from_idx]["image_filename"]
-        return question_str, answer_str, ImagePipeline(image_path, self.image_color_space)
+        return self.entries[from_idx]
 
     def iter_images(
         self, shuffle: bool = False, max_items: int | None = None
@@ -246,13 +270,21 @@ class Clevr(DistributedDataset[BatchWithLossMask]):
         for img_path in image_lst:
             yield ImagePipeline(self.images_root / img_path, self.image_color_space).to_tensor()
 
+    @overload
     def iter(
-        self, shuffle: bool = False, max_items: int | None = None
-    ) -> Generator[tuple[str, str, torch.Tensor], None, None]:
+        self, *, shuffle: bool = ..., max_items: int | None = ..., raw: Literal[True]
+    ) -> Generator[tuple[int, ClevrQuestion], None, None]: ...
+    @overload
+    def iter(
+        self, shuffle: bool = ..., max_items: int | None = ..., raw: Literal[False] = ...
+    ) -> Generator[tuple[int, tuple[str, str, ImagePipeline]], None, None]: ...
+    def iter(
+        self, shuffle: bool = False, max_items: int | None = None, raw: bool = False
+    ) -> Generator[tuple[int, tuple[str, str, ImagePipeline] | ClevrQuestion], None, None]:
         """
-        Iterate over all the question, answer image tuples in Clevr. While
-        question/answer pairs unique, images may appear more than once. No
-        preprocessing is applied.
+        Iterate over all the question, answer image tuples in Clevr (or raw
+        entries if specified). While question/answer pairs unique, images may
+        appear more than once. No preprocessing is applied.
         """
         entries_range = list(range(len(self.entries)))
         if shuffle:
@@ -260,8 +292,12 @@ class Clevr(DistributedDataset[BatchWithLossMask]):
         if max_items is not None:
             entries_range = entries_range[:max_items]
         for i in entries_range:
-            question, answer, image = self.get_sample_raw(i)
-            yield question, answer, image.to_tensor()
+            s = self.get_sample_raw(i)
+            if raw:
+                yield i, s
+            else:
+                img = ImagePipeline(self.images_root / s["image_filename"], self.image_color_space)
+                yield i, (s["question"], s["answer"], img)
 
     def get_sample_with_parts(
         self, from_idx: int
@@ -279,8 +315,11 @@ class Clevr(DistributedDataset[BatchWithLossMask]):
         3. A tuple containing the original `q`, `i`, `a` parts that are
            concatenated in `q_i_q_a` and the size of the right padding applied
         """
-        question_str, answer_str, image_pipeline = self.get_sample_raw(from_idx)
-
+        s = self.get_sample_raw(from_idx)
+        question_str, answer_str = (s["question"], s["answer"])
+        image_pipeline = ImagePipeline(
+            self.images_root / s["image_filename"], self.image_color_space
+        )
         # question and image as tensors, not yet tokenized
         question = Bytes.str_to_tensor(question_str)
         image = self.process_and_flatten_img(image_pipeline)

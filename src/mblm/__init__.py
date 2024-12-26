@@ -10,7 +10,7 @@ ALL RIGHTS RESERVED
 __version__ = "0.0.1"
 
 
-from mblm.model.config import MBLMModelConfig
+from mblm.model.config import MBLMModelConfig, MBLMReturnType
 from mblm.model.mblm import MBLM
 
-__all__ = ["MBLM", "MBLMModelConfig"]
+__all__ = ["MBLM", "MBLMModelConfig", "MBLMReturnType"]

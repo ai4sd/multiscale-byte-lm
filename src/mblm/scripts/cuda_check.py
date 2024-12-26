@@ -20,10 +20,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
 
+import pprint
 
-MBLM_TOKEN_EMB_MIGRATION: set[str] = {
-    "token_embs_rev.0.weight",
-    "token_embs_rev.1.0.weight",
-    "to_logits.weight",
-    "to_logits.bias",
-}
+from mblm.utils.cuda import cuda_properties
+
+if __name__ == "__main__":
+    pprint.pprint(cuda_properties())

@@ -28,7 +28,7 @@ from mblm.model.mamba_shim import Mamba1, Mamba1Config, Mamba2Mixer
 
 class MambaBlockConfig(StageBlock, BaseModel):
     """
-    General config for creating a Mamba block inside MMB.
+    General config for creating a Mamba block inside MBLM.
     Uses roughly 3 * expand * d_model^2 parameters.
 
     Parameters in brackets [x] denote the notation used in Mambabyte

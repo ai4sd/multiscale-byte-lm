@@ -31,7 +31,7 @@ from mblm.model.block import BlockType, StageBlock
 
 class TransformerBlockConfig(StageBlock, BaseModel):
     """
-    General config for creating a Transformer block inside MMB.
+    General config for creating a Transformer block inside MBLM.
     """
 
     attn_head_dims: int

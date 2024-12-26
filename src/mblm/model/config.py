@@ -20,6 +20,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
 
+from enum import Enum, auto
 from itertools import repeat
 from typing import Sequence
 
@@ -29,10 +30,16 @@ from mblm.model.mamba import MambaBlockConfig
 from mblm.model.transformer import TransformerBlockConfig
 
 
+class MBLMReturnType(str, Enum):
+    LOGITS = auto()
+    LOSS = auto()
+    LOSS_LOGITS = auto()
+
+
 class MBLMModelConfig(BaseModel):
     """
     General config for creating a MBLM model. For all iterables,
-    the order corresponds to global to most local stage from left to right.
+    the order corresponds to global to local stage from left to right.
 
     Params:
         num_tokens: The vocabulary size

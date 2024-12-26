@@ -1,0 +1,21 @@
+io:
+  name_model: my-model
+  output_dir: tests/e2e/trainer/outputs # static
+  num_models_to_save: 2
+  validate_amount: 10
+  log_train_loss_amount: 20
+  description: >-
+    This is config 2 to test gradient accumulation
+params:
+  input_seq_len: 1
+  hidden_size: 20
+  output_size: 1
+train:
+  # There are 10_000 elements in the training set
+  target_elements: 15_000
+  batch_size: 10
+  learning_rate: 0.001
+  gradient_clipping: 1
+  shuffle_train: true
+  gradient_accumulate_every: 5
+  target_elements_strategy: batch

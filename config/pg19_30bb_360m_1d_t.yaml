@@ -1,0 +1,31 @@
+io:
+  name_model: 8k_30b_360m_1d_t
+  output_dir: /data/output < set this!
+  dataset_dir: /data/datasets/pg19 < set this!
+  dataset_id: pg19
+  num_models_to_save: 5
+  validate_amount: 100
+  log_train_loss_amount: 1000
+params:
+  num_tokens: 256
+  pad_token_id: 0
+  input_seq_len: 8192
+  seq_lens: [8192]
+  hidden_dims: [1024]
+  num_layers: [42]
+  train_checkpoint_chunks: null
+  block:
+    attn_head_dims: 64
+    attn_num_heads: 16
+    attn_use_rot_embs: true
+    attn_dropout: 0
+    use_flash_attn: true
+    patch_pos_emb_type: fixed
+train:
+  target_elements: 30_000_000_000
+  target_elements_strategy: sequence
+  batch_size: 4
+  shuffle_train: false
+  learning_rate: 0.001
+  gradient_clipping: 1
+  gradient_accumulate_every: 12

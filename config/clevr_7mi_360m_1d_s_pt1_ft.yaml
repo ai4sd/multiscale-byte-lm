@@ -1,0 +1,54 @@
+io:
+  name_model: 8k_7mi_360m_1d_s_pt1_ft
+  output_dir: /data/output < set this!
+  dataset_dir: /data/datasets/clevr < set this!
+  dataset_id: clevr
+  dataset_args:
+    target_mode: a
+    qiqa_loss_mask: [0.0, 0.0, 0.0, 1]
+    answer_categorical: true
+    resize_to_w: 62
+    resize_to_h: 41
+    crop_h_perc: 0.1
+    crop_w_perc: 0.1
+    eom_token_id: 129
+    som_text_token_id: 130
+    som_image_token_id: 131
+    downsample_channels: null
+    shift_channels_start: null
+  num_models_to_save: 5
+  validate_amount: 100
+  log_train_loss_amount: 1000
+  description: >-
+    Describe this!
+params:
+  num_tokens: 256
+  pad_token_id: 128
+  input_seq_len: 8192
+  seq_lens: [8192]
+  hidden_dims: [1024]
+  num_layers: [54]
+  train_checkpoint_chunks: null
+  block:
+    d_state: 128
+    d_conv: 4
+    expand: 2
+    headdim: 64
+    dropout: 0.1
+    patch_pos_emb_type: null
+train:
+  target_elements: 7_000_000
+  target_elements_strategy: batch
+  batch_size: 6
+  max_eval_steps: 1000
+  shuffle_train: true
+  learning_rate: 0.0001
+  gradient_clipping: 0.5
+  gradient_accumulate_every: 48
+resume:
+  checkpoint_file: /path-to-checkpoint.pth
+  next_batch_index: 0
+  next_epoch_index: 0
+  migrate_embeddings: false
+  rename_modules: true
+  resumed_from: null
