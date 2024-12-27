@@ -8,6 +8,8 @@ Multiscale Byte Language Model is a hierarchical byte-level sequence-to-sequence
 
 ## Install
 
+MBLM is tested against Python versions 3.10, 3.11, 3.12 and 3.13.
+
 Install from PyPI:
 
 ```
