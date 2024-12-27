@@ -20,18 +20,20 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
 
+
 from typing import Callable, Iterable, cast
 
 import torch
 from MEGABYTE_pytorch.megabyte import Attention, FeedForward, RMSNorm, RotaryEmbedding, token_shift
 from pydantic import BaseModel, Field
 
-from mblm.model.block import BlockType, StageBlock
+from mblm.model.block import StageBlock
+from mblm.registry import block_registry
 
 
 class TransformerBlockConfig(StageBlock, BaseModel):
     """
-    General config for creating a Transformer block inside MBLM.
+    General config for creating a Transformer Decocer block inside MBLM.
     """
 
     attn_head_dims: int
@@ -42,7 +44,7 @@ class TransformerBlockConfig(StageBlock, BaseModel):
     ff_dropout: float = 0.0
     use_flash_attn: bool = False
 
-    block_type: BlockType = Field(init=False, default="transformer")
+    block_type: str = Field(init=False, default="transformer")
 
     def to_model(self, model_dim, num_layers):
         return TransformerDecoder(
@@ -104,3 +106,6 @@ class TransformerDecoder(torch.nn.Module):
             input_ids = ff(token_shift(input_ids)) + input_ids
 
         return self.norm(input_ids)
+
+
+block_registry.register(TransformerBlockConfig)

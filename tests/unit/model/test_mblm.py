@@ -40,7 +40,7 @@ class TestMBLM:
                     attn_dropout=self.dropout,
                     ff_multiplier=self.ff_mult,
                     ff_dropout=self.dropout,
-                    patch_pos_emb_type="fixed",
+                    pos_emb_type="fixed",
                     attn_use_rot_embs=self.use_rot_emb,
                     use_flash_attn=self.use_flash_attn,
                 ),

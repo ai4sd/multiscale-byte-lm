@@ -31,8 +31,7 @@ import polars as pl
 from pydantic import ValidationError
 
 from mblm.data.types import ModelMode
-from mblm.model.block import BlockType
-from mblm.scripts.train_mblm import TrainOutputConfig
+from mblm.trainer.mblm import TrainOutputConfig
 from mblm.utils.io import load_yml
 
 ModelType = Literal["SSM", "Transformer", "Mixed"]
@@ -124,10 +123,10 @@ class Aggregator:
         )
 
     def _determine_model_type(self, config: TrainOutputConfig) -> ModelType:
-        block_types: list[BlockType] = [block.block_type for block in config.params.blocks()]
-        if all([block_type == "mamba2" for block_type in block_types]):
+        block_ids = [block.block_type for block in config.params.stage_blocks]
+        if all([block_id == "mamba2" for block_id in block_ids]):
             return "SSM"
-        if all([block_type == "transformer" for block_type in block_types]):
+        if all([block_id == "transformer" for block_id in block_ids]):
             return "Transformer"
         return "Mixed"
 
@@ -141,7 +140,7 @@ class Aggregator:
         for folder, exp_name in folders:
             path = Path(folder)
             try:
-                config = load_yml(path / "config.yml", parse_to=TrainOutputConfig)
+                config = load_yml(path / "config.yaml", TrainOutputConfig, try_yaml_suffixes=True)
 
                 grad_acc_every = config.train.gradient_accumulate_every
                 model_type = self._determine_model_type(config)
@@ -158,14 +157,14 @@ class Aggregator:
                     num_tokens=pl.lit(config.params.num_tokens),
                     checkpoints=pl.lit(config.params.train_checkpoint_chunks),
                     patch_pos_emb=pl.lit(
-                        [b.patch_pos_emb_type or "none" for b in config.params.blocks()]
+                        [b.pos_emb_type or "none" for b in config.params.stage_blocks]
                     ),
                     lr=pl.lit(config.train.learning_rate),
                     batch_size=pl.lit(config.train.batch_size),
                     grad_step=pl.lit(grad_acc_every * config.train.batch_size),
                     grad_clip=pl.lit(config.train.gradient_clipping),
                     num_gpus=pl.lit(config.summary.num_workers),
-                    dataset_args=pl.lit(config.io.dataset_args, allow_object=True),
+                    # dataset_args=pl.lit(config.io.dataset_args),
                     comment=pl.lit(config.io.description),
                     training_finished=pl.lit(bool(config.summary.training_end)),
                     error=pl.lit(config.summary.error),

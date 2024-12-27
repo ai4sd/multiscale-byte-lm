@@ -24,9 +24,12 @@ import re
 from pathlib import Path
 from typing import TypeAlias
 
+import polars as pl
+from tabulate import tabulate
+
 from mblm import MBLM, MBLMModelConfig
 from mblm.data.utils import Bytes
-from mblm.scripts.train_mblm import TrainOutputConfig
+from mblm.trainer.mblm import TrainOutputConfig
 from mblm.utils.io import load_model_state, load_yml
 
 ExpCollection: TypeAlias = list[tuple[str, str]]
@@ -44,6 +47,13 @@ LINE_BREAK_TABS_RE = re.compile(r"[\r\n]+")
 
 def strip_line_breaks(text: str) -> str:
     return LINE_BREAK_TABS_RE.sub(" ", text)
+
+
+def dataframe_to_md_table(df: pl.DataFrame, output_file: str | Path) -> None:
+    as_str = tabulate(df.to_dict(), headers=df.columns, tablefmt="github")
+    with Path(output_file).open("w") as f:
+        f.write(as_str)
+    return None
 
 
 def load_model(

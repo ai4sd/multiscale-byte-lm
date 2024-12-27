@@ -20,22 +20,23 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
 
+from pathlib import Path
 
-from abc import ABC, abstractmethod
-from typing import Literal
+from mblm.trainer.mblm import TrainEntryConfig, train_mblm
+from mblm.utils.io import load_yml
 
-import torch
-from pydantic import BaseModel
+if __name__ == "__main__":
+    import argparse
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-c",
+        dest="config_path",
+        required=True,
+        type=Path,
+        help="Path to the experiment yaml config file",
+    )
 
-class StageBlock(ABC, BaseModel):
-    block_type: str
-
-    pos_emb_type: Literal["fixed", "rope"] | None
-
-    @abstractmethod
-    def to_model(
-        self,
-        model_dim: int,
-        num_layers: int,
-    ) -> torch.nn.Module: ...
+    args = parser.parse_args()
+    train_cfg = load_yml(args.config_path, parse_to=TrainEntryConfig)
+    train_mblm(train_cfg)

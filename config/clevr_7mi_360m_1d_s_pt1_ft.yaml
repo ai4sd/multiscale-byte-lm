@@ -35,7 +35,7 @@ params:
     expand: 2
     headdim: 64
     dropout: 0.1
-    patch_pos_emb_type: null
+    pos_emb_type: null
 train:
   target_elements: 7_000_000
   target_elements_strategy: batch

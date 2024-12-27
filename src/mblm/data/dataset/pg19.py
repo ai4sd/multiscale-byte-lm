@@ -27,11 +27,24 @@ from typing import Generator
 
 import torch
 import tqdm
+from pydantic import BaseModel
 from typing_extensions import Unpack
 
 from mblm.data.datasets import BatchWithLossMask, DistributedDataset, DistributedDatasetConfig
 from mblm.data.types import ModelMode
 from mblm.data.utils import Bytes
+
+
+class PG19ModelGeneration(BaseModel):
+    id_model: str
+    book_id: str
+    book_txt_offset: int
+    ctx_len: int
+    generated: list[int]
+    truth: list[int]
+    ce: float
+    generation_time: float
+    timestamp: str
 
 
 class PG19(DistributedDataset[BatchWithLossMask]):

@@ -23,11 +23,11 @@ def ensure_no_error_logs(log_file: Path):
 def assert_on_model_run_output(output_dir: Path) -> None:
     checkpoints = list(output_dir.rglob("*.pth"))
     csv_loss_file = output_dir / "loss.csv"
-    yml_config_file = output_dir / "config.yml"
+    yml_config_file = output_dir / "config.yaml"
     log_file = output_dir / "train.log"
 
     assert csv_loss_file.exists(), "Expected a CSV loss file"
-    assert yml_config_file.exists(), "Expected a YML config file"
+    assert yml_config_file.exists(), "Expected a YAML config file"
     assert log_file.exists(), "Expected a log file"
 
     ensure_no_error_logs(log_file)

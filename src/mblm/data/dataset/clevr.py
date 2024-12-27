@@ -57,6 +57,17 @@ class ClevrQuestion(TypedDict):
     program: list[ClevrFunction]
 
 
+class ClevrModelGeneration(BaseModel):
+    id_model: str
+    sample_idx: int
+    question: str
+    question_type: str
+    answer_gen: list[int]
+    answer_truth: list[int]
+    ce: float
+    timestamp: str
+
+
 class ClevrOptionalArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

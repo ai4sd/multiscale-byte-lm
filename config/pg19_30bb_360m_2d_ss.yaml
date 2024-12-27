@@ -19,7 +19,7 @@ params:
     d_conv: 4
     expand: 2
     headdim: 64
-    patch_pos_emb_type: null
+    pos_emb_type: null
 train:
   target_elements: 30_000_000_000
   target_elements_strategy: sequence

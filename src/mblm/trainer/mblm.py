@@ -22,7 +22,6 @@ SOFTWARE."""
 
 import math
 import os
-from pathlib import Path
 from typing import Any, Iterator, Literal
 
 import torch
@@ -45,7 +44,6 @@ from mblm.trainer.config import (
 )
 from mblm.trainer.core import CoreTrainer
 from mblm.utils.distributed import process_group
-from mblm.utils.io import load_yml
 from mblm.utils.logging import create_logger, shutdown_log_handlers
 from mblm.utils.misc import count_params
 
@@ -164,14 +162,9 @@ class MegabyteTrainer(CoreTrainer[MBLM, BatchWithLossMask, ModelParams, CoreTrai
         # enabled via yaml config
         return MBLM_TOKEN_EMB_MIGRATION
 
-    def rename_modules_if_enabled(self):
-        # we have renamed pos_embs to patch_pos_embs in newer versions. enabled
-        # via yaml config
-        return (("pos_embs", "patch_pos_embs"),)
-
 
 @record
-def main(config: TrainEntryConfig) -> None:
+def train_mblm(config: TrainEntryConfig) -> None:
     log = create_logger(__name__, log_dir=config.io.output_dir)
 
     try:
@@ -201,20 +194,3 @@ def main(config: TrainEntryConfig) -> None:
     except Exception as error:
         log.fatal(error, exc_info=True)
         shutdown_log_handlers()
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-c",
-        dest="config_path",
-        required=True,
-        type=Path,
-        help="Path to the experiment yaml config file",
-    )
-
-    args = parser.parse_args()
-    train_cfg = load_yml(args.config_path, parse_to=TrainEntryConfig)
-    main(train_cfg)

@@ -20,7 +20,7 @@ params:
     attn_use_rot_embs: true
     attn_dropout: 0
     use_flash_attn: true
-    patch_pos_emb_type: fixed
+    pos_emb_type: fixed
 train:
   target_elements: 30_000_000_000
   target_elements_strategy: sequence

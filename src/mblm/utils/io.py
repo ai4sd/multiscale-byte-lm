@@ -26,12 +26,10 @@ import logging
 from pathlib import Path
 from typing import Any, Callable, Generic, Iterable, NamedTuple, TypeAlias, TypeVar
 
-import polars as pl
 import torch
 import yaml
 from filelock import FileLock
 from pydantic import BaseModel
-from tabulate import tabulate
 from torch import load as torch_load
 from torch import save as torch_save
 from torch.nn import Module as TorchModule
@@ -50,25 +48,36 @@ _TBaseModel = TypeVar("_TBaseModel", bound=BaseModel)
 
 
 def load_yml(
-    path: str | Path,
-    parse_to: type[_TBaseModel],
+    path: str | Path, parse_to: type[_TBaseModel], try_yaml_suffixes: bool = False
 ) -> _TBaseModel:
     """
-    Load any configuration from a (nested) yml file.
+    Load any configuration from a (nested) yaml file.
     Args:
-        path (str | Path): The path to the yml file
+        path (str | Path): The path to the yaml file
         parse_to: An instance of a Pydantic model
+        check_yaml_suffixes (bool=False): If `True`, try
+            loading the file with either a `yaml` or
+            `yml` extension
     Returns:
         A populated instance of the Pydantic model
     """
-
-    with Path.open(_to_path(path), "r") as file:
-        yaml_data = yaml.safe_load(file)
-    return parse_to.model_validate(yaml_data)
+    path = _to_path(path)
+    yaml_suffixes = {".yaml", ".yml"}
+    assert path.suffix in yaml_suffixes, f"{path} is not a yaml file"
+    try:
+        with Path.open(path, "r") as file:
+            yaml_data = yaml.safe_load(file)
+            return parse_to.model_validate(yaml_data)
+    except FileNotFoundError as exception:
+        if try_yaml_suffixes:
+            yaml_suffixes.remove(path.suffix)
+            new_suffix = next(iter(yaml_suffixes))
+            return load_yml(path.with_suffix(new_suffix), parse_to, try_yaml_suffixes=False)
+        raise exception
 
 
 def dump_yml(path: str | Path, data: BaseModel) -> Path:
-    path = _to_path(path).with_suffix(".yml")
+    path = _to_path(path).with_suffix(".yaml")
     with Path.open(path, "w") as file:
         yaml.safe_dump(data.model_dump(), file)
     return path
@@ -147,13 +156,6 @@ def read_jsonl(
 ) -> list[_T]:
     with _to_path(path).open("r", encoding="utf8") as f:
         return [parse_lines_to(**json.loads(line)) for line in f.readlines()]
-
-
-def dataframe_to_md_table(df: pl.DataFrame, output_file: str | Path) -> None:
-    as_str = tabulate(df.to_dict(), headers=df.columns, tablefmt="github")
-    with _to_path(output_file).open("w") as f:
-        f.write(as_str)
-    return None
 
 
 StateDict: TypeAlias = dict[str, Any]

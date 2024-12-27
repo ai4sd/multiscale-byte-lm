@@ -162,7 +162,7 @@ class TestModelCheckpointing:
                         attn_head_dims=64,
                         attn_num_heads=8,
                         attn_use_rot_embs=True,
-                        patch_pos_emb_type=None,
+                        pos_emb_type=None,
                     ),
                 )
             )

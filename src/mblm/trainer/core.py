@@ -68,7 +68,7 @@ TBatch = TypeVar("TBatch")
 
 @dataclass
 class CoreTrainerOptions:
-    config_file_name: str = "config.yml"
+    config_file_name: str = "config.yaml"
     loss_file_name: str = "loss.csv"
     timemem_file_name: str = "timemem.csv"
     max_train_restarts: int = 0

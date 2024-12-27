@@ -16,5 +16,5 @@ export DISPLAY_PROGRESS=1
 OMP_NUM_THREADS=1 uv run torchrun \
     --standalone \
     --nproc_per_node=gpu \
-    src/mblm/scripts/train_mblm.py \
+    scripts/train_mblm.py \
     -c $1

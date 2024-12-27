@@ -25,12 +25,11 @@ from datetime import datetime
 from pathlib import Path
 
 import torch
-from pydantic import BaseModel
 from tqdm import tqdm
 
 from mblm import MBLM, MBLMReturnType
 from mblm.analysis.utils import load_model
-from mblm.data.dataset.clevr import Clevr, ClevrOptionalArgs
+from mblm.data.dataset.clevr import Clevr, ClevrModelGeneration, ClevrOptionalArgs
 from mblm.data.types import ModelMode
 from mblm.utils.seed import seed_everything
 
@@ -38,17 +37,6 @@ DEVICE = "cuda"
 
 # clevr has no labelled test set
 DATASET_MODE = ModelMode.VALID
-
-
-class ClevrModelGeneration(BaseModel):
-    id_model: str
-    sample_idx: int
-    question: str
-    question_type: str
-    answer_gen: list[int]
-    answer_truth: list[int]
-    ce: float
-    timestamp: str
 
 
 def sample_clevr_by_question_type(clevr: Clevr, items_per_question: int) -> list[tuple[str, int]]:

@@ -26,10 +26,10 @@ from rouge_score import rouge_scorer, scoring
 
 from mblm.data.utils.bytes import Bytes
 
-T = TypeVar("T")
+_T = TypeVar("_T")
 
 
-def token_accuracy(a: Sequence[T], b: Sequence[T], allow_var_lens: bool) -> float:
+def token_accuracy(a: Sequence[_T], b: Sequence[_T], allow_var_lens: bool) -> float:
     if len(a) != len(b) and not allow_var_lens:
         raise ValueError("Sequences must have the same length")
     if len(a) == 0 or len(b) == 0:
@@ -41,7 +41,7 @@ def token_accuracy(a: Sequence[T], b: Sequence[T], allow_var_lens: bool) -> floa
     return correct / len(a)
 
 
-rouge_scorers = dict(
+_rouge_scorers = dict(
     rouge1=rouge_scorer.RougeScorer(["rouge1"]), rougeL=rouge_scorer.RougeScorer(["rougeL"])
 )
 
@@ -52,7 +52,7 @@ def rouge_score_from_bytes(
     try:
         t = Bytes.byte_list_to_str(target)
         p = Bytes.byte_list_to_str(predicted)
-        score: scoring.Score = rouge_scorers[which].score(t, p)[which]
+        score: scoring.Score = _rouge_scorers[which].score(t, p)[which]
         return score.fmeasure
     except Exception:
         return -1

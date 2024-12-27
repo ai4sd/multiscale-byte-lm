@@ -20,10 +20,12 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
 
+
 from pydantic import BaseModel, Field
 
-from mblm.model.block import BlockType, StageBlock
+from mblm.model.block import StageBlock
 from mblm.model.mamba_shim import Mamba1, Mamba1Config, Mamba2Mixer
+from mblm.registry import block_registry
 
 
 class MambaBlockConfig(StageBlock, BaseModel):
@@ -52,10 +54,7 @@ class MambaBlockConfig(StageBlock, BaseModel):
     headdim: int  # Mamba2 only
     dropout: float = 0.0  # Mamba2 only. Default for backwards compatibility
 
-    block_type: BlockType = Field(
-        init=False,
-        default_factory=lambda: "mamba1" if Mamba2Mixer is None else "mamba2",
-    )
+    block_type: str = Field(init=False, default="mamba1" if Mamba2Mixer is None else "mamba2")
 
     def to_model(self, model_dim, num_layers):
         if Mamba2Mixer is not None:
@@ -81,3 +80,6 @@ class MambaBlockConfig(StageBlock, BaseModel):
         raise RuntimeError(
             "Failed to import any Mamba version - this should never happen",
         )
+
+
+block_registry.register(MambaBlockConfig)

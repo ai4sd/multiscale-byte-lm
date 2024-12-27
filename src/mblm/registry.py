@@ -20,22 +20,32 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
 
+from typing import Any, Callable, Generic, TypeVar
 
-from abc import ABC, abstractmethod
-from typing import Literal
+from mblm.model.block import StageBlock
 
-import torch
-from pydantic import BaseModel
+_T = TypeVar("_T")
 
 
-class StageBlock(ABC, BaseModel):
-    block_type: str
+class ClassRegistry(Generic[_T]):
+    __registry = set[type[_T]]()
 
-    pos_emb_type: Literal["fixed", "rope"] | None
+    def __init__(self, name: str):
+        self.__name = name
 
-    @abstractmethod
-    def to_model(
-        self,
-        model_dim: int,
-        num_layers: int,
-    ) -> torch.nn.Module: ...
+    def register(self, klass: type[_T]) -> None:
+        if klass in self.__registry:
+            raise ValueError(f"{self.__name} already has {klass}")
+        self.__registry.add(klass)
+
+    def try_parse(self, data: Any, parse_func: Callable[[type[_T], Any], _T]):
+        for klass in self.__registry:
+            try:
+                return parse_func(klass, data)
+            except Exception:
+                pass
+
+        raise ValueError(f"Coult not parse data to any of {self.__registry}")
+
+
+block_registry = ClassRegistry[StageBlock]("stage_block")

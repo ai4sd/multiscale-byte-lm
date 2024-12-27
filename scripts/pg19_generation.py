@@ -26,11 +26,10 @@ from pathlib import Path
 from typing import cast
 
 import torch
-from pydantic import BaseModel
 
 from mblm import MBLM, MBLMReturnType
 from mblm.analysis.utils import load_model
-from mblm.data.dataset.pg19 import PG19
+from mblm.data.dataset.pg19 import PG19, PG19ModelGeneration
 from mblm.data.types import ModelMode
 from mblm.data.utils import Bytes
 from mblm.utils.io import NDJSONWriter
@@ -40,18 +39,6 @@ DEVICE = "cuda"
 DATASET_MODE = ModelMode.VALID
 # dot, whitespace, uppercase, 1+ lowercase, whitespace, 1+ lowercase
 START_OF_SENTENCE_RE = re.compile(r"\.\s[A-Z][a-z]{1,}\s[a-z]{1,}")
-
-
-class PG19ModelGeneration(BaseModel):
-    id_model: str
-    book_id: str
-    book_txt_offset: int
-    ctx_len: int
-    generated: list[int]
-    truth: list[int]
-    ce: float
-    generation_time: float
-    timestamp: str
 
 
 def seek_to_start_of_sentence(text: str) -> int | None:

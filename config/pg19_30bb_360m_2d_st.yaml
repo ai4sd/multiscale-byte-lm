@@ -19,13 +19,13 @@ params:
       d_conv: 4
       expand: 2
       headdim: 64
-      patch_pos_emb_type: null
+      pos_emb_type: null
     - attn_head_dims: 64
       attn_num_heads: 16
       attn_use_rot_embs: true
       attn_dropout: 0
       use_flash_attn: true
-      patch_pos_emb_type: fixed
+      pos_emb_type: fixed
 train:
   target_elements: 30_000_000_000
   target_elements_strategy: sequence
