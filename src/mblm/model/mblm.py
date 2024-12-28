@@ -425,13 +425,16 @@ class MBLM(nn.Module):
 
         logits = self.to_logits.forward(attended)  # (B, P_1', P_2, ..., 1 + P_n, V)
 
+        logits_out = logits
+
+        if flattened_dims:
+            # drop the start tokens and combine inner dimensions into one
+            logits_out = rearrange(logits_out[..., 1:, :], "b ... v -> b (...) v")
+            # remove the padding
+            logits_out = logits_out[:, :flat_seq_len]
+
         if return_type == MBLMReturnType.LOGITS:
-            if flattened_dims:
-                # drop the start tokens and combine inner dimensions into one
-                logits = rearrange(logits[..., 1:, :], "b ... v -> b (...) v")
-                # remove the padding
-                logits = logits[:, :flat_seq_len]
-            return logits
+            return logits_out
 
         # the most local sequences still contain the preprended start tokens
         # (i.e., the logits) - extract this token once and later prepend it to
@@ -441,18 +444,18 @@ class MBLM(nn.Module):
         start_token_logits = logits[first_start_token_logits_idx]  # type: ignore
 
         # drop ALL start tokens and combine inner dimensions into one...
-        logits = rearrange(logits[..., 1:, :], "b ... v -> b (...) v")
+        logits_rearranged = rearrange(logits[..., 1:, :], "b ... v -> b (...) v")
 
         # spread across batches
         start_token_logits = rearrange(start_token_logits, "b v -> b 1 v")
         # right-shift by one by appending the start token to the flat sequence
-        logits = torch.cat((start_token_logits, logits), dim=-2)
+        logits_rearranged = torch.cat((start_token_logits, logits_rearranged), dim=-2)
         # drop the last item to match lengths
-        logits = logits[..., :-1, :]
+        logits_rearranged = logits_rearranged[..., :-1, :]
 
         # rearrange for loss calculation: the k-dimensional loss expects (B, V,
         # L)
-        preds = rearrange(logits, "b l v -> b v l")
+        preds = rearrange(logits_rearranged, "b l v -> b v l")
         targets = rearrange(input_ids, "b ... -> b (...)")
 
         # same shape as targets with 0 everywhere where the token equals the pad
@@ -488,7 +491,7 @@ class MBLM(nn.Module):
 
         if return_type == MBLMReturnType.LOSS:
             return loss
-        return loss, logits
+        return loss, logits_out
 
     @torch.inference_mode()
     def generate(

@@ -5,8 +5,13 @@ seed_everything(8)
 
 def test_from_config():
     import torch
-
-    from mblm import MBLM, MambaBlockConfig, MBLMModelConfig, TransformerBlockConfig
+    from mblm import (
+        MBLM,
+        MambaBlockConfig,
+        MBLMModelConfig,
+        MBLMReturnType,
+        TransformerBlockConfig,
+    )
 
     mblm = MBLM(
         MBLMModelConfig(
@@ -36,14 +41,20 @@ def test_from_config():
     )
 
     x = torch.randint(0, 258, (1, 12)).long()
-    mblm.forward(x)
+
+    # Choose between any of the return types
+    logits = mblm.forward(x, return_type=MBLMReturnType.LOGITS)
+    loss = mblm.forward(x, return_type=MBLMReturnType.LOSS)
+    loss, logits = mblm.forward(x, return_type=MBLMReturnType.LOSS_LOGITS)
+
+    assert logits.shape == (1, 12, 257)
+    assert loss.ndim == 0
 
 
 def test_from_yaml():
     import torch
     import yaml
-
-    from mblm import MBLM, MBLMModelConfig
+    from mblm import MBLM, MBLMModelConfig, MBLMReturnType
 
     yml_model_config = """
     num_tokens: 257
@@ -63,9 +74,9 @@ def test_from_yaml():
         attn_use_rot_embs: true
         use_flash_attn: true
         pos_emb_type: fixed
-  """
+    """
 
     parsed_config = yaml.safe_load(yml_model_config)
     mblm = MBLM(MBLMModelConfig.model_validate(parsed_config))
     x = torch.randint(0, 258, (1, 12)).long()
-    mblm.forward(x)
+    mblm.forward(x, return_type=MBLMReturnType.LOSS)

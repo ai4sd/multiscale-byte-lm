@@ -31,7 +31,7 @@ import polars as pl
 from pydantic import ValidationError
 
 from mblm.data.types import ModelMode
-from mblm.trainer.mblm import TrainOutputConfig
+from mblm.train.mblm import TrainOutputConfig
 from mblm.utils.io import load_yml
 
 ModelType = Literal["SSM", "Transformer", "Mixed"]

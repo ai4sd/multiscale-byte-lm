@@ -29,7 +29,7 @@ from typing import Sequence
 from tabulate import tabulate
 
 from mblm import MBLM
-from mblm.trainer.mblm import TrainEntryConfig
+from mblm.train.mblm import TrainEntryConfig
 from mblm.utils.io import load_yml
 from mblm.utils.misc import count_params
 

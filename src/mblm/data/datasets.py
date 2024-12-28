@@ -24,15 +24,12 @@ SOFTWARE."""
 
 
 from abc import ABC, abstractmethod
-from typing import TypeAlias, TypeVar
+from typing import TypeVar
 
-import torch
 from torch.utils.data import Dataset
 from typing_extensions import TypedDict, Unpack
 
 _T = TypeVar("_T")
-
-BatchWithLossMask: TypeAlias = tuple[torch.Tensor, torch.Tensor]
 
 
 class DistributedDatasetConfig(TypedDict):
@@ -113,15 +110,6 @@ class DistributedDataset(ABC, Dataset[_T]):
 
     def offset_one(self) -> DistributedDataset[_T]:
         return self.offset_to(self.sample_offset + 1)
-
-    @staticmethod
-    def supports_test_mode() -> bool:
-        """
-        Whether or not this dataset supports a test mode. Some datasets might not
-        expose the answers in their test set so we cannot evaluate a model on it.
-        Override if necessary
-        """
-        return True
 
     @abstractmethod
     def get_sample(self, from_idx: int) -> _T:

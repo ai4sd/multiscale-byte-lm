@@ -22,21 +22,47 @@ SOFTWARE."""
 
 from typing import Any, Callable, Generic, TypeVar
 
-from mblm.model.block import StageBlock
-
 _T = TypeVar("_T")
 
 
-class ClassRegistry(Generic[_T]):
-    __registry = set[type[_T]]()
+class DictRegistry(Generic[_T]):
+    __registry: dict[str, type[_T]]
 
     def __init__(self, name: str):
         self.__name = name
+        self.__registry = {}
+
+    def register(self, id: str, klass: type[_T]) -> None:
+        if id in self.__registry:
+            raise ValueError(f"{self.__name} already has {id} ({klass})")
+        self.__registry.setdefault(id, klass)
+
+    def __contains__(self, item: Any) -> bool:
+        return item in self.__registry
+
+    def get(self, id: str) -> type[_T]:
+        if (klass := self.__registry.get(id, None)) is None:
+            raise ValueError(f"{id} not found in {self.__name}")
+        return klass
+
+    def __str__(self) -> str:
+        return f"{self.__registry}"
+
+
+class SetRegistry(Generic[_T]):
+    __registry: set[type[_T]]
+
+    def __init__(self, name: str):
+        self.__name = name
+        self.__registry = set()
 
     def register(self, klass: type[_T]) -> None:
         if klass in self.__registry:
             raise ValueError(f"{self.__name} already has {klass}")
         self.__registry.add(klass)
+
+    def __contains__(self, item: Any) -> bool:
+        return item in self.__registry
 
     def try_parse(self, data: Any, parse_func: Callable[[type[_T], Any], _T]):
         for klass in self.__registry:
@@ -47,5 +73,5 @@ class ClassRegistry(Generic[_T]):
 
         raise ValueError(f"Coult not parse data to any of {self.__registry}")
 
-
-block_registry = ClassRegistry[StageBlock]("stage_block")
+    def __str__(self) -> str:
+        return f"{self.__registry}"

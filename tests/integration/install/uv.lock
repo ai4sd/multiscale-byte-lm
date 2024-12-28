@@ -169,7 +169,6 @@ dependencies = [
     { name = "mambapy" },
     { name = "megabyte-pytorch" },
     { name = "numpy" },
-    { name = "packaging" },
     { name = "pillow" },
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -181,9 +180,8 @@ requires-dist = [
     { name = "einops", specifier = ">=0.8.0" },
     { name = "filelock", specifier = ">=3.16.1" },
     { name = "mambapy", specifier = ">=1.2.0" },
-    { name = "megabyte-pytorch", specifier = ">=0.3.5" },
+    { name = "megabyte-pytorch", specifier = ">=0.3.6" },
     { name = "numpy", specifier = ">=2.1.1" },
-    { name = "packaging", specifier = ">=24.2" },
     { name = "pillow", specifier = ">=11.0.0" },
     { name = "polars", marker = "sys_platform != 'linux' and extra == 'analysis'", specifier = ">=1.18.0" },
     { name = "polars-lts-cpu", marker = "sys_platform == 'linux' and extra == 'analysis'", specifier = ">=1.18.0" },
@@ -237,17 +235,18 @@ dev = [{ name = "pytest", specifier = ">=8.3.3" }]
 
 [[package]]
 name = "megabyte-pytorch"
-version = "0.3.5"
+version = "0.3.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "beartype" },
     { name = "einops" },
+    { name = "packaging" },
     { name = "torch" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/da/10/caa0772843ce5286c7f3eadfc119af2665e6051e8b81654bfec4ecbf682a/megabyte_pytorch-0.3.5.tar.gz", hash = "sha256:3cdf5880108cd5945ebbea022952f1600b350ace1168e4deb9a78e93200fc70f", size = 8966 }
+sdist = { url = "https://files.pythonhosted.org/packages/48/97/0a44c7e54eed709f028032d862f65c1e6a3483c9474d1b98eaaaedb49036/megabyte_pytorch-0.3.6.tar.gz", hash = "sha256:47cf0a1d55526bcce43194cefabfbd2d02564f48349e691a0881a988d31fe2de", size = 8986 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/09/5d/e7e576637679d22f90f9af21d510e11a62e1fe78dfe65548c3e3e074cf5e/MEGABYTE_pytorch-0.3.5-py3-none-any.whl", hash = "sha256:93a6abcb0dae9db43afa700f4bba0d73e36917bdce42da9fe070298947774b8f", size = 8143 },
+    { url = "https://files.pythonhosted.org/packages/88/02/4de99c70326adde7de75a1bc6e01621b4ed2e90680196f6cd3395edabfc6/MEGABYTE_pytorch-0.3.6-py3-none-any.whl", hash = "sha256:afb5293f9f4032c9c9f7e9d7a8129fc18a7fe069f2494887a4d2ffc8dfa26296", size = 8151 },
 ]
 
 [[package]]

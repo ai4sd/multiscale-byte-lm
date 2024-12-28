@@ -5,9 +5,14 @@ seed_everything(8)
 
 def test_from_config():
     import torch
+    from mblm import (
+        MBLM,
+        MBLMModelConfig,
+        MBLMReturnType,
+        TransformerBlockConfig,
+    )
+    from mblm.model.block import StageBlock
     from pydantic import BaseModel, Field
-
-    from mblm import MBLM, MBLMModelConfig, StageBlock, TransformerBlockConfig
 
     # Define any custom model
     class MyLSTM(torch.nn.Module):
@@ -63,15 +68,16 @@ def test_from_config():
     )
 
     x = torch.randint(0, 258, (1, 12)).long()
-    mblm.forward(x)
+    mblm.forward(x, return_type=MBLMReturnType.LOSS)
 
 
 def test_from_yaml():
     import torch
     import yaml
+    from mblm import MBLM, MBLMModelConfig, MBLMReturnType
+    from mblm.model.block import StageBlock
+    from mblm.model.config import block_registry  # Add this!
     from pydantic import BaseModel, Field
-
-    from mblm import MBLM, MBLMModelConfig, StageBlock, block_registry
 
     # Define any custom model
     class MyLSTM(torch.nn.Module):
@@ -124,4 +130,4 @@ def test_from_yaml():
     parsed_config = yaml.safe_load(yml_model_config)
     mblm = MBLM(MBLMModelConfig.model_validate(parsed_config))
     x = torch.randint(0, 258, (1, 12)).long()
-    mblm.forward(x)
+    mblm.forward(x, return_type=MBLMReturnType.LOSS)

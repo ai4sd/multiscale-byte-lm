@@ -17,7 +17,7 @@ all: format lint check_types test
 .PHONY: .install_common	
 .install_common:
 	@echo "Installing common Python dependencies"
-	uv sync --all-extras --frozen
+	uv sync --all-extras
 
 .PHONY: install_common_ci
 install_common_ci:
@@ -74,8 +74,8 @@ test_integration:
 
 .PHONY: test_integration_install
 test_integration_install:
-	uv run --project tests/integration/install --reinstall-package mblm --quiet \
-		pytest tests/integration/install
+	uv run --project tests/integration/install --reinstall-package mblm \
+		--isolated --quiet pytest tests/integration/install
 
 .PHONY: test_integration_config
 test_integration_config:

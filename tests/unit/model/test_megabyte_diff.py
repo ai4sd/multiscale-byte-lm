@@ -86,7 +86,7 @@ class TestMegabyte:
     ):
         original, patched = self.boostrap_models(model_dims, seq_lens)
 
-        input_tensor = self.make_input_tensor(9)
+        input_tensor = self.make_input_tensor(8)
         loss_original = original.forward(input_tensor, return_loss=True)
         loss_patched = patched.forward(input_tensor, return_type=MBLMReturnType.LOSS)
         assert loss_original.isclose(
@@ -100,8 +100,12 @@ class TestMegabyte:
         loss_patched.backward()
 
         logits_original = original.forward(input_tensor, return_loss=False)
-        logits_patched = patched.forward(input_tensor, return_type=MBLMReturnType.LOGITS)
-        assert logits_original.equal(logits_patched), f"preds do not match - model dim {model_dims}"
+        logits_patched_1 = patched.forward(input_tensor, return_type=MBLMReturnType.LOGITS)
+        _, logits_patched_2 = patched.forward(input_tensor, return_type=MBLMReturnType.LOSS_LOGITS)
+
+        assert logits_original.equal(logits_patched_1) and logits_patched_1.equal(
+            logits_patched_2
+        ), f"preds do not match - model dim {model_dims}"
         assert (
             logits_original.dtype == loss_patched.dtype
         ), "pred dtypes do not match - model dim {model_dims}"

@@ -22,7 +22,7 @@ SOFTWARE."""
 
 from pathlib import Path
 
-from mblm.trainer.mblm import TrainEntryConfig, train_mblm
+from mblm.train.mblm import TrainEntryConfig, train_mblm
 from mblm.utils.io import load_yml
 
 if __name__ == "__main__":

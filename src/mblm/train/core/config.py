@@ -30,12 +30,6 @@ from typing import Generic, Literal, NamedTuple, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
-"""
-The return type of any DistributedDataset that is used with the Core trainer -
-the tuple indicates <source> <target>, and target can be None for
-self-supervised learning
-"""
-
 
 class CoreModelParams(BaseModel):
     """

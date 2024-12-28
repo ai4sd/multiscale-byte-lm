@@ -22,44 +22,35 @@ SOFTWARE."""
 
 import math
 import os
-from typing import Any, Iterator, Literal
+from abc import abstractmethod
+from typing import Any, Iterator, Protocol
 
 import torch
-from torch.distributed.elastic.multiprocessing.errors import record
+from pydantic import Field
 from torch.optim import Adam, Optimizer  # type: ignore
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, LRScheduler, SequentialLR
 
 from mblm import MBLM, MBLMModelConfig, MBLMReturnType
-from mblm.data.dataset.clevr import Clevr, ClevrOptionalArgs
+from mblm.data.dataset.clevr import Clevr
 from mblm.data.dataset.pg19 import PG19
-from mblm.data.datasets import BatchWithLossMask
-from mblm.data.types import ModelMode
+from mblm.data.datasets import DistributedDataset
+from mblm.data.types import BatchWithLossMask, ModelMode
 from mblm.model.embeddings import MBLM_TOKEN_EMB_MIGRATION
-from mblm.trainer.config import (
+from mblm.registry import DictRegistry
+from mblm.train.core.config import (
     CoreIoConfig,
     CoreModelParams,
     CoreTrainConfig,
     GenericEntryConfig,
     GenericOutputConfig,
 )
-from mblm.trainer.core import CoreTrainer
+from mblm.train.core.trainer import CoreTrainer
 from mblm.utils.distributed import process_group
 from mblm.utils.logging import create_logger, shutdown_log_handlers
 from mblm.utils.misc import count_params
 
 
-class IoConfig(CoreIoConfig):
-    """
-    Custom io settings on top of the core/required parameters
-    """
-
-    dataset_dir: str
-    dataset_id: Literal["pg19", "clevr"]
-    dataset_args: dict[str, Any] | None = None
-    description: str | None = None
-
-
-class ModelParams(MBLMModelConfig, CoreModelParams):
+class TrainMBLMParams(MBLMModelConfig, CoreModelParams):
     """
     Combine the params required by the MBLM model and the trainer.
     """
@@ -67,41 +58,65 @@ class ModelParams(MBLMModelConfig, CoreModelParams):
     pass
 
 
-class TrainOutputConfig(GenericOutputConfig[ModelParams, CoreTrainConfig, IoConfig]):
+class TrainMBLMIoConfig(CoreIoConfig):
     """
-    A class that can be used directly to parse any output generated from
-    training with the MBLM model.
+    Custom io settings on top of the core/required parameters
+    """
+
+    dataset_dir: str = Field(description="Path to the dataset folder")
+    dataset_id: str = Field(description="The unique identifier of the dataset")
+    dataset_args: dict[str, Any] | None = Field(
+        default=None, description="Optional arguments passed to the dataset"
+    )
+    description: str | None = Field(default=None, description="A description for this experiment")
+
+
+class TrainOutputConfig(GenericOutputConfig[TrainMBLMParams, CoreTrainConfig, TrainMBLMIoConfig]):
+    """
+    A convenience class that can be used directly to parse any output generated
+    from training a MBLM.
     """
 
     pass
 
 
-class TrainEntryConfig(GenericEntryConfig[ModelParams, CoreTrainConfig, IoConfig]):
-    def import_dataset(self, mode: ModelMode, worker_id: int, num_workers: int):
-        if self.io.dataset_id == "clevr":
-            # cannot pass None to model_validate
-            optional_args = ClevrOptionalArgs.model_validate(self.io.dataset_args or dict())
+class TrainEntryConfig(GenericEntryConfig[TrainMBLMParams, CoreTrainConfig, TrainMBLMIoConfig]):
+    """
+    Class used to parse all required input configuration for training an MBLM.
+    """
 
-            return Clevr(
-                data_dir=self.io.dataset_dir,
-                mode=mode,
-                pad_token_id=self.params.pad_token_id,
-                seq_len=self.params.input_seq_len,
-                worker_id=worker_id,
-                num_workers=num_workers,
-                optional_args=optional_args,
-            )
-
-        return PG19(
-            data_dir=self.io.dataset_dir,
-            mode=mode,
-            seq_len=self.params.input_seq_len,
-            worker_id=worker_id,
-            num_workers=num_workers,
-        )
+    pass
 
 
-class MegabyteTrainer(CoreTrainer[MBLM, BatchWithLossMask, ModelParams, CoreTrainConfig, IoConfig]):
+class MBLMTrainerDatasetImpl(Protocol):
+    """
+    Any dataset object implementing this protocol can be used with the MBLM trainer.
+    """
+
+    @staticmethod
+    @abstractmethod
+    def from_train_entry_config(
+        config: TrainEntryConfig, mode: ModelMode, worker_id: int, num_workers: int
+    ) -> DistributedDataset[BatchWithLossMask]:
+        """
+        How to parse a training config to a dataset.
+        """
+        ...
+
+    @staticmethod
+    @abstractmethod
+    def supports_test_mode() -> bool:
+        """
+        Whether or not this dataset supports a test mode. Some datasets might not
+        expose the answers in their test set so we cannot evaluate a model on it.
+        Override if necessary
+        """
+        ...
+
+
+class MegabyteTrainer(
+    CoreTrainer[MBLM, BatchWithLossMask, TrainMBLMParams, CoreTrainConfig, CoreIoConfig]
+):
     def init_model(self):
         return MBLM(
             MBLMModelConfig(
@@ -163,18 +178,27 @@ class MegabyteTrainer(CoreTrainer[MBLM, BatchWithLossMask, ModelParams, CoreTrai
         return MBLM_TOKEN_EMB_MIGRATION
 
 
-@record
+dataset_registry = DictRegistry[MBLMTrainerDatasetImpl]("datasets")
+
+dataset_registry.register("pg19", PG19)
+dataset_registry.register("clevr", Clevr)
+
+
 def train_mblm(config: TrainEntryConfig) -> None:
     log = create_logger(__name__, log_dir=config.io.output_dir)
 
     try:
         with process_group(backend="nccl") as run_vars:
-            train_dataset = config.import_dataset(
+            dataset = dataset_registry.get(config.io.dataset_id)
+
+            train_dataset = dataset.from_train_entry_config(
+                config,
                 mode=ModelMode.TRAIN,
                 worker_id=run_vars.local_rank,
                 num_workers=run_vars.world_size,
             )
-            valid_dataset = config.import_dataset(
+            valid_dataset = dataset.from_train_entry_config(
+                config,
                 mode=ModelMode.VALID,
                 worker_id=0,
                 num_workers=1,
@@ -183,9 +207,10 @@ def train_mblm(config: TrainEntryConfig) -> None:
             trainer = MegabyteTrainer(config, run_vars=run_vars)
             best_model = trainer.train(train_dataset, valid_dataset)
 
-            supports_test_mode = train_dataset.supports_test_mode()
+            supports_test_mode = dataset.supports_test_mode()
             if best_model and supports_test_mode:
-                test_dataset = config.import_dataset(
+                test_dataset = dataset.from_train_entry_config(
+                    config,
                     mode=ModelMode.TEST,
                     worker_id=0,
                     num_workers=1,

@@ -29,7 +29,7 @@ from tabulate import tabulate
 
 from mblm import MBLM, MBLMModelConfig
 from mblm.data.utils import Bytes
-from mblm.trainer.mblm import TrainOutputConfig
+from mblm.train.mblm import TrainOutputConfig
 from mblm.utils.io import load_model_state, load_yml
 
 ExpCollection: TypeAlias = list[tuple[str, str]]

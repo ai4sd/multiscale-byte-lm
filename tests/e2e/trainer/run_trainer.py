@@ -13,8 +13,13 @@ from torch.optim import Adam, Optimizer  # type: ignore
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, LRScheduler, SequentialLR
 
 from mblm.data.datasets import DistributedDataset
-from mblm.trainer.config import CoreIoConfig, CoreModelParams, CoreTrainConfig, GenericEntryConfig
-from mblm.trainer.core import CoreTrainer, CoreTrainerOptions
+from mblm.train.core.config import (
+    CoreIoConfig,
+    CoreModelParams,
+    CoreTrainConfig,
+    GenericEntryConfig,
+)
+from mblm.train.core.trainer import CoreTrainer, CoreTrainerOptions
 from mblm.utils.distributed import process_group
 from mblm.utils.io import load_yml
 from mblm.utils.logging import create_logger

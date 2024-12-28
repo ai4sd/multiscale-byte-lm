@@ -25,7 +25,6 @@ from pydantic import BaseModel, Field
 
 from mblm.model.block import StageBlock
 from mblm.model.mamba_shim import Mamba1, Mamba1Config, Mamba2Mixer
-from mblm.registry import block_registry
 
 
 class MambaBlockConfig(StageBlock, BaseModel):
@@ -80,6 +79,3 @@ class MambaBlockConfig(StageBlock, BaseModel):
         raise RuntimeError(
             "Failed to import any Mamba version - this should never happen",
         )
-
-
-block_registry.register(MambaBlockConfig)

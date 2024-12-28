@@ -50,8 +50,13 @@ MBLM can be used with the default Transformer Decoder or Mamba block. The below 
 
 ```py
 import torch
-
-from mblm import MBLM, MambaBlockConfig, MBLMModelConfig, TransformerBlockConfig
+from mblm import (
+    MBLM,
+    MambaBlockConfig,
+    MBLMModelConfig,
+    MBLMReturnType,
+    TransformerBlockConfig,
+)
 
 mblm = MBLM(
     MBLMModelConfig(
@@ -81,7 +86,14 @@ mblm = MBLM(
 )
 
 x = torch.randint(0, 258, (1, 12)).long()
-mblm.forward(x)
+
+# Choose between any of the return types
+logits = mblm.forward(x, return_type=MBLMReturnType.LOGITS)
+loss = mblm.forward(x, return_type=MBLMReturnType.LOSS)
+loss, logits = mblm.forward(x, return_type=MBLMReturnType.LOSS_LOGITS)
+
+assert logits.shape == (1, 12, 257)
+assert loss.ndim == 0
 ```
 
 Alternatively, you can read configuration from a YAML string (or file):
@@ -89,8 +101,7 @@ Alternatively, you can read configuration from a YAML string (or file):
 ```py
 import torch
 import yaml
-
-from mblm import MBLM, MBLMModelConfig
+from mblm import MBLM, MBLMModelConfig, MBLMReturnType
 
 yml_model_config = """
 num_tokens: 257
@@ -115,7 +126,7 @@ block:
 parsed_config = yaml.safe_load(yml_model_config)
 mblm = MBLM(MBLMModelConfig.model_validate(parsed_config))
 x = torch.randint(0, 258, (1, 12)).long()
-mblm.forward(x)
+mblm.forward(x, return_type=MBLMReturnType.LOSS)
 ```
 
 ### Custom stage blocks
@@ -124,9 +135,14 @@ You can define custom stage blocks for MBLM as follows. A stageblock must provid
 
 ```py
 import torch
+from mblm import (
+    MBLM,
+    MBLMModelConfig,
+    MBLMReturnType,
+    TransformerBlockConfig,
+)
+from mblm.model.block import StageBlock
 from pydantic import BaseModel, Field
-
-from mblm import MBLM, MBLMModelConfig, StageBlock, TransformerBlockConfig
 
 # Define any custom model
 class MyLSTM(torch.nn.Module):
@@ -182,7 +198,7 @@ mblm = MBLM(
 )
 
 x = torch.randint(0, 258, (1, 12)).long()
-mblm.forward(x)
+mblm.forward(x, return_type=MBLMReturnType.LOSS)
 ```
 
 If you want to parse a YAML config to a custom block, **register the block** before creating the model:
@@ -190,9 +206,10 @@ If you want to parse a YAML config to a custom block, **register the block** bef
 ```py
 import torch
 import yaml
+from mblm import MBLM, MBLMModelConfig, MBLMReturnType
+from mblm.model.block import StageBlock
+from mblm.model.config import block_registry  # Add this!
 from pydantic import BaseModel, Field
-
-from mblm import MBLM, MBLMModelConfig, StageBlock, block_registry
 
 # Define any custom model
 class MyLSTM(torch.nn.Module):
@@ -245,8 +262,160 @@ block_registry.register(LSTMBlockConfig)  # Add this!
 parsed_config = yaml.safe_load(yml_model_config)
 mblm = MBLM(MBLMModelConfig.model_validate(parsed_config))
 x = torch.randint(0, 258, (1, 12)).long()
-mblm.forward(x)
+mblm.forward(x, return_type=MBLMReturnType.LOSS)
 ```
+
+### Custom datasets
+
+If you want to use the MBLM trainer with [torchrun](https://pytorch.org/docs/stable/elastic/run.html) with a custom dataset, you will need to add a few special methods. Here is an end-to-end example where you launch training on your own:
+
+```py
+# Filename: train_my_mblm.py
+
+import torch
+from mblm.data.datasets import DistributedDataset, DistributedDatasetConfig
+from mblm.data.types import BatchWithLossMask, ModelMode
+from mblm.model.mamba import MambaBlockConfig
+from mblm.model.transformer import TransformerBlockConfig
+from mblm.train.core.config import CoreTrainConfig
+from mblm.train.mblm import (
+    TrainEntryConfig,
+    TrainMBLMIoConfig,
+    TrainMBLMParams,
+    dataset_registry,
+    train_mblm,
+)
+from typing_extensions import Unpack
+
+
+class MyDataset(DistributedDataset[BatchWithLossMask]):
+    def __init__(
+        self,
+        mode: ModelMode,
+        dataset_dir: str,
+        **args: Unpack[DistributedDatasetConfig],
+    ):
+        # Dummy example - Get data from anywhere, e.g., the disk
+        print(f"Reading dataset from {dataset_dir}")
+        if mode == ModelMode.TRAIN:
+            data = list(range(10_000))
+        else:
+            data = list(range(2_000))
+        self._data = data
+        super().__init__(
+            data_size=len(data),
+            is_sequential=True,  # We have a sequential dataset
+            **args,
+        )
+
+    def get_sample(self, from_idx: int):
+        """
+        Tell the superclass how to get a single sample - here, a sequence of
+        the specified length.
+        """
+        data = torch.tensor(self._data[from_idx : from_idx + self.seq_len])
+        return torch.ones_like(data), data
+
+    @staticmethod
+    def from_train_entry_config(
+        config: TrainEntryConfig,
+        mode: ModelMode,
+        worker_id: int,
+        num_workers: int,
+    ) -> DistributedDataset[BatchWithLossMask]:
+        """
+        How to parse a training config to a dataset.
+        """
+        return MyDataset(
+            dataset_dir=config.io.dataset_dir,
+            mode=mode,
+            seq_len=config.params.input_seq_len,
+            num_workers=num_workers,
+            worker_id=worker_id,
+        )
+
+    @staticmethod
+    def supports_test_mode() -> bool:
+        """
+        Whether or not this dataset supports a test mode. Some datasets might not
+        expose the answers in their test set so we cannot evaluate a model on it.
+        Override if necessary
+        """
+        return True
+
+
+dataset_registry.register("mydataset", MyDataset)
+
+config = TrainEntryConfig(
+    io=TrainMBLMIoConfig(
+        dataset_dir="data/my-dataset",
+        dataset_id="mydataset",
+        name_model="my-model",
+        output_dir="/u/eeg/disk",
+        num_models_to_save=3,
+        validate_amount=20,
+        log_train_loss_amount=100,
+    ),
+    train=CoreTrainConfig(
+        batch_size=1,
+        target_elements=1000,
+        target_elements_strategy="sequence",
+        learning_rate=0.001,
+        gradient_accumulate_every=4,
+        gradient_clipping=1,
+        shuffle_train=True,
+        shuffle_eval=False,
+    ),
+    params=TrainMBLMParams(
+        input_seq_len=128,
+        num_tokens=257,
+        hidden_dims=[512, 512],
+        seq_lens=[16, 8],
+        num_layers=[5, 5],
+        pad_token_id=256,
+        train_checkpoint_chunks=None,
+        block=[
+            MambaBlockConfig(
+                d_state=128,
+                d_conv=4,
+                expand=2,
+                headdim=64,
+                pos_emb_type=None,
+            ),
+            TransformerBlockConfig(
+                attn_head_dims=64,
+                attn_num_heads=16,
+                attn_use_rot_embs=True,
+                use_flash_attn=True,
+                pos_emb_type="fixed",
+            ),
+        ],
+    ),
+)
+
+if __name__ == "__main__":
+    train_mblm(config)
+
+```
+
+Then, run the above file with:
+
+```sh
+OMP_NUM_THREADS=1 uv run torchrun --standalone \
+    --nproc_per_node=gpu train_my_mblm.py
+```
+
+Generally, training is started from a config file in YAML format. The above is just to give an idea of how everything works together.
+
+Check the [example configs](config) - they should look very similar to the config above - and how we launch training (with `scripts/train_mblm.py`). With any config, simply run:
+
+```bash
+bash scripts/train_mblm.py -c <your-config>
+```
+
+Which will launch [torchrun](https://pytorch.org/docs/stable/elastic/run.html) with all the necessary configuration.
+
+Alternatively, you can always subclass the core trainer and do things you way. There are many examples in the source dir and the end-to-end tests.
 
 ## Local development setup
 

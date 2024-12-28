@@ -4,7 +4,12 @@ from pathlib import Path
 
 import polars as pl
 
-from mblm.trainer.config import CoreIoConfig, CoreModelParams, CoreTrainConfig, GenericOutputConfig
+from mblm.train.core.config import (
+    CoreIoConfig,
+    CoreModelParams,
+    CoreTrainConfig,
+    GenericOutputConfig,
+)
 from mblm.utils.io import load_yml
 
 

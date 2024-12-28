@@ -3,7 +3,7 @@ import random
 import pytest
 from pytest_mock import MockerFixture
 
-from mblm.trainer.iter import epoch_cycler
+from mblm.train.core.iter import epoch_cycler
 
 
 class TestEpochCycler:

@@ -28,7 +28,6 @@ from MEGABYTE_pytorch.megabyte import Attention, FeedForward, RMSNorm, RotaryEmb
 from pydantic import BaseModel, Field
 
 from mblm.model.block import StageBlock
-from mblm.registry import block_registry
 
 
 class TransformerBlockConfig(StageBlock, BaseModel):
@@ -106,6 +105,3 @@ class TransformerDecoder(torch.nn.Module):
             input_ids = ff(token_shift(input_ids)) + input_ids
 
         return self.norm(input_ids)
-
-
-block_registry.register(TransformerBlockConfig)

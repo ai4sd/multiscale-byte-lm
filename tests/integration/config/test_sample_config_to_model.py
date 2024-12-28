@@ -7,7 +7,7 @@ from mblm import MBLM, MBLMModelConfig
 from mblm.data.dataset.clevr import ClevrOptionalArgs
 from mblm.model.mamba import MambaBlockConfig
 from mblm.model.transformer import TransformerBlockConfig
-from mblm.trainer.mblm import TrainEntryConfig
+from mblm.train.mblm import TrainEntryConfig
 from mblm.utils.io import load_yml
 
 CONFIG_FILES_DIR = "config"
