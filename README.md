@@ -344,14 +344,15 @@ class MyDataset(DistributedDataset[BatchWithLossMask]):
         return True
 
 
+# Register dataset with a unique ID
 dataset_registry.register("mydataset", MyDataset)
 
 config = TrainEntryConfig(
     io=TrainMBLMIoConfig(
-        dataset_dir="data/my-dataset",
-        dataset_id="mydataset",
+        dataset_dir="data/datasets/my-dataset",
+        dataset_id="mydataset",  # Must match the ID above
         name_model="my-model",
-        output_dir="/u/eeg/disk",
+        output_dir="data/outputs",
         num_models_to_save=3,
         validate_amount=20,
         log_train_loss_amount=100,
@@ -395,7 +396,6 @@ config = TrainEntryConfig(
 
 if __name__ == "__main__":
     train_mblm(config)
-
 ```
 
 Then, run the above file with:
