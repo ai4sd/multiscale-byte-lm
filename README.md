@@ -3,7 +3,7 @@
 Multiscale Byte Language Model is a hierarchical byte-level sequence-to-sequence model for multimodal tasks.
 
 <p align="center">
-    <img src="assets/mblm.png" alt="mblm-architecture" width="600"/>
+    <img src="https://raw.githubusercontent.com/ai4sd/multiscale-byte-lm/refs/heads/main/assets/mblm.png" alt="mblm-architecture" width="600"/>
 </p>
 
 ## Install
