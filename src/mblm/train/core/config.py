@@ -96,7 +96,6 @@ class ResumeConfig(BaseModel):
     rename_modules: bool = Field(
         default=False,
         description="Rename modules from existing models to new names",
-        deprecated="Not used anymore. All modules use the same name again and there is no need to rename",
     )
     resumed_from: str | None = Field(
         default=None,

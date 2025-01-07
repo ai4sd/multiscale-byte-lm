@@ -36,7 +36,6 @@ from mblm.data.dataset.pg19 import PG19
 from mblm.data.datasets import DistributedDataset
 from mblm.data.types import BatchWithLossMask, ModelMode
 from mblm.model.embeddings import MBLM_TOKEN_EMB_MIGRATION
-from mblm.registry import DictRegistry
 from mblm.train.core.config import (
     CoreIoConfig,
     CoreModelParams,
@@ -114,8 +113,36 @@ class MBLMTrainerDatasetImpl(Protocol):
         ...
 
 
+class DatasetRegistry(dict[str, MBLMTrainerDatasetImpl]):
+    """
+    Dataset registry that allows (custom) datasets to be registered for usage
+    with the MBLM trainer. Any dataset used with the MBLM trainer must be
+    registered first.
+    """
+
+    def register(self, dataset_id: str, klass: MBLMTrainerDatasetImpl) -> None:
+        """
+        Register a dataset that implements the methods required by
+        `MBLMTrainerDatasetImpl`.
+        """
+        return self.update({dataset_id: klass})
+
+    def retrieve(self, dataset_id: str) -> MBLMTrainerDatasetImpl:
+        """
+        Retrieve a dataset. Will raise a `KeyError` if the dataset's id cannot
+        be found.
+        """
+        return self[dataset_id]
+
+
 class MegabyteTrainer(
-    CoreTrainer[MBLM, BatchWithLossMask, TrainMBLMParams, CoreTrainConfig, CoreIoConfig]
+    CoreTrainer[
+        MBLM,
+        BatchWithLossMask,
+        TrainMBLMParams,
+        CoreTrainConfig,
+        CoreIoConfig,
+    ]
 ):
     def init_model(self):
         return MBLM(
@@ -178,7 +205,7 @@ class MegabyteTrainer(
         return MBLM_TOKEN_EMB_MIGRATION
 
 
-dataset_registry = DictRegistry[MBLMTrainerDatasetImpl]("datasets")
+dataset_registry = DatasetRegistry()
 
 dataset_registry.register("pg19", PG19)
 dataset_registry.register("clevr", Clevr)
@@ -189,7 +216,7 @@ def train_mblm(config: TrainEntryConfig) -> None:
 
     try:
         with process_group(backend="nccl") as run_vars:
-            dataset = dataset_registry.get(config.io.dataset_id)
+            dataset = dataset_registry.retrieve(config.io.dataset_id)
 
             train_dataset = dataset.from_train_entry_config(
                 config,

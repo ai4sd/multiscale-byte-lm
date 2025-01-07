@@ -24,7 +24,7 @@ uv add mblm
 
 ### Using Torch and Mamba
 
-You will need to **install a recent version PyTorch manually**. We use `>=2.4.1`. It is best to do this after installing the package since some sub-dependencies might install their own (CPU) PyTorch version.
+You will need to **install a recent PyTorch version manually**. We use `>=2.4.1`. It is best to do this after installing the package since some sub-dependencies might install their own (CPU) PyTorch version.
 
 ```
 pip install 'torch>=2.4.1' --index-url https://download.pytorch.org/whl/cu124

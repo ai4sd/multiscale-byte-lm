@@ -26,12 +26,11 @@ from typing import Any, Sequence
 
 from pydantic import BaseModel, computed_field, field_validator, model_validator
 
-from mblm.model.block import StageBlock
+from mblm.model.block import StageBlock, StageBlockRegistry
 from mblm.model.mamba import MambaBlockConfig
 from mblm.model.transformer import TransformerBlockConfig
-from mblm.registry import SetRegistry
 
-block_registry = SetRegistry[StageBlock]("stage_block")
+block_registry = StageBlockRegistry()
 block_registry.register(TransformerBlockConfig)
 block_registry.register(MambaBlockConfig)
 

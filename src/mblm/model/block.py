@@ -22,16 +22,25 @@ SOFTWARE."""
 
 
 from abc import ABC, abstractmethod
-from typing import Literal
+from typing import Any, Callable, Literal
 
 import torch
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class StageBlock(ABC, BaseModel):
-    block_type: str
+    """
+    Configuration for a single model block at an MBLM stage.
+    """
 
-    pos_emb_type: Literal["fixed", "rope"] | None
+    block_type: str = Field(
+        description="A name for the block for easy identification, which can be any string name"
+    )
+
+    pos_emb_type: Literal["fixed", "rope"] | None = Field(
+        default=None,
+        description="The type of positional embedding to add to tokens of the stage block",
+    )
 
     @abstractmethod
     def to_model(
@@ -39,3 +48,41 @@ class StageBlock(ABC, BaseModel):
         model_dim: int,
         num_layers: int,
     ) -> torch.nn.Module: ...
+
+    """
+    An abstract method that creates a `torch.nn.Module` from the stage block
+    configuration.
+    """
+
+
+class StageBlockRegistry(set[type[StageBlock]]):
+    """
+    Stage block registry that allows (custom) stage blocks to be registered for
+    usage with MBLM. Blocks only need to be registered when they require parsing
+    from a YAML config file. When a MBLM configuration is read from a YAML
+    config file, the registry will try to find a matching stage block
+    implementation.
+    """
+
+    def register(self, stage_block_klass: type[StageBlock]) -> None:
+        """
+        Register a stage block class so it can be validated from a YAML
+        configuration file.
+        """
+        return self.add(stage_block_klass)
+
+    def try_parse(
+        self,
+        data: Any,
+        parse_func: Callable[[type[StageBlock], Any], StageBlock],
+    ):
+        """
+        Try to parse configuration data to a registered stage block class.
+        """
+        for klass in self:
+            try:
+                return parse_func(klass, data)
+            except Exception:
+                pass
+
+        raise ValueError(f"Coult not parse data to any of {self}")
