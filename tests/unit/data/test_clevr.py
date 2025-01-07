@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import cast
 
 import pydantic
 import pytest
@@ -8,29 +7,8 @@ import torch
 from mblm.data.dataset.clevr import Clevr, ClevrOptionalArgs
 from mblm.data.types import ModelMode
 from mblm.data.utils.bytes import Bytes
-from mblm.scripts.train_mblm import TrainEntryConfig
-from mblm.utils.io import load_yml
 
 CLEVR_FIXTURE_PATH = Path("tests/fixtures/clevr")
-
-
-def import_experiment_config(exp_config_path: str | Path) -> TrainEntryConfig:
-    return load_yml(exp_config_path, parse_to=TrainEntryConfig)
-
-
-def import_clevr_from_experiment(exp_config: str | TrainEntryConfig) -> Clevr:
-    """
-    General helper to load the Clevr dataset from a yml experiment config
-    """
-    exp_conf = (
-        exp_config
-        if isinstance(exp_config, TrainEntryConfig)
-        else import_experiment_config(exp_config)
-    )
-    # adjust the dataset dir to point to the fixture
-    exp_conf.io.dataset_dir = str(CLEVR_FIXTURE_PATH)
-    # we can be sure that this is clevr
-    return cast(Clevr, exp_conf.import_dataset(ModelMode.VALID, worker_id=0, num_workers=1))
 
 
 def import_clevr_from_fixture(pad_token_id: int, optional_args: ClevrOptionalArgs):

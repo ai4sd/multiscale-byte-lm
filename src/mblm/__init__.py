@@ -11,6 +11,14 @@ __version__ = "0.0.1"
 
 
 from mblm.model.config import MBLMModelConfig, MBLMReturnType
+from mblm.model.mamba import MambaBlockConfig
 from mblm.model.mblm import MBLM
+from mblm.model.transformer import TransformerBlockConfig
 
-__all__ = ["MBLM", "MBLMModelConfig", "MBLMReturnType"]
+__all__ = [
+    "MBLM",
+    "MBLMModelConfig",
+    "MBLMReturnType",
+    "TransformerBlockConfig",
+    "MambaBlockConfig",
+]

@@ -1,0 +1,26 @@
+[project]
+name = "mblm-test"
+version = "0.0.1"
+description = "Multiscale Byte Language Model - Test project"
+authors = [
+    { name = "Eric Egli", email = "eric.christian.egli@ibm.com" },
+    { name = "Jannis Born", email = "jab@zurich.ibm.com" },
+]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["mblm", "torch>=2.5.1"]
+
+[tool.uv.sources]
+mblm = { path = "../../../" }
+
+[dependency-groups]
+dev = ["pytest>=8.3.3"]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+addopts = ["--import-mode=importlib"]
+
+[tool.ruff]
+line-length = 80
+target-version = "py310"
+indent-width = 4

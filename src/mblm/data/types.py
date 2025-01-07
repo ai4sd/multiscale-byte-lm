@@ -21,9 +21,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
 
 from enum import Enum
+from typing import TypeAlias
+
+import torch
 
 
 class ModelMode(Enum):
     TRAIN = "train"
     VALID = "valid"
     TEST = "test"
+
+
+BatchWithLossMask: TypeAlias = tuple[torch.Tensor, torch.Tensor]

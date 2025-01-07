@@ -30,12 +30,6 @@ from typing import Generic, Literal, NamedTuple, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
-"""
-The return type of any DistributedDataset that is used with the Core trainer -
-the tuple indicates <source> <target>, and target can be None for
-self-supervised learning
-"""
-
 
 class CoreModelParams(BaseModel):
     """
@@ -100,7 +94,8 @@ class ResumeConfig(BaseModel):
         default=False, description="Migrate an existing smaller number of embeddings"
     )
     rename_modules: bool = Field(
-        default=False, description="Rename modules from existing models to new names"
+        default=False,
+        description="Rename modules from existing models to new names",
     )
     resumed_from: str | None = Field(
         default=None,

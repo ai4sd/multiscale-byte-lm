@@ -7,10 +7,9 @@ from mblm import MBLM, MBLMModelConfig
 from mblm.data.dataset.clevr import ClevrOptionalArgs
 from mblm.model.mamba import MambaBlockConfig
 from mblm.model.transformer import TransformerBlockConfig
-from mblm.scripts.train_mblm import TrainEntryConfig
+from mblm.train.mblm import TrainEntryConfig
 from mblm.utils.io import load_yml
 
-# TODO
 CONFIG_FILES_DIR = "config"
 CONFIG_FILES = [(config,) for config in Path(CONFIG_FILES_DIR).glob("*.yaml")]
 
@@ -31,7 +30,7 @@ class TestConfigToModel:
         return None
 
     def ensure_model_is_created(self, config: TrainEntryConfig) -> None:
-        for b in config.params.blocks():
+        for b in config.params.stage_blocks:
             assert isinstance(b, (TransformerBlockConfig, MambaBlockConfig))
             if isinstance(b, TransformerBlockConfig):
                 assert b.block_type == "transformer"

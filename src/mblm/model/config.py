@@ -22,12 +22,17 @@ SOFTWARE."""
 
 from enum import Enum, auto
 from itertools import repeat
-from typing import Sequence
+from typing import Any, Sequence
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field, field_validator, model_validator
 
+from mblm.model.block import StageBlock, StageBlockRegistry
 from mblm.model.mamba import MambaBlockConfig
 from mblm.model.transformer import TransformerBlockConfig
+
+block_registry = StageBlockRegistry()
+block_registry.register(TransformerBlockConfig)
+block_registry.register(MambaBlockConfig)
 
 
 class MBLMReturnType(str, Enum):
@@ -47,7 +52,7 @@ class MBLMModelConfig(BaseModel):
         hidden_dims: The model's hidden dimensions at each stage
         num_layers: The number of layers at each stage
         seq_lens: The sequence length at each stage
-        block: Either a Transformer or Mamba block configuration
+        block: A Transformer or Mamba block
     """
 
     num_tokens: int
@@ -56,14 +61,44 @@ class MBLMModelConfig(BaseModel):
     num_layers: Sequence[int]
     seq_lens: Sequence[int]
     train_checkpoint_chunks: list[int] | None
-    block: (
-        TransformerBlockConfig | MambaBlockConfig | list[TransformerBlockConfig | MambaBlockConfig]
-    )
 
-    def blocks(self) -> list[TransformerBlockConfig | MambaBlockConfig]:
+    block: StageBlock | list[StageBlock]
+
+    @field_validator("block", mode="before")
+    @classmethod
+    def parse_block(cls, value: Any) -> Any:
+        """
+        Try to parse the block to any registered stage block
+        """
+        given_as_list = isinstance(value, list)
+        value = value if given_as_list else [value]
+        parsed = []
+        for block_data in value:
+            if isinstance(block_data, StageBlock):
+                parsed.append(block_data)
+                continue
+            parsed_block = block_registry.try_parse(
+                block_data, lambda model, data: model.model_validate(data)
+            )
+            parsed.append(parsed_block)
+        return parsed if given_as_list else parsed[0]
+
+    @model_validator(mode="after")
+    def validate_stages(self):
+        is_equal_num_stages = len(self.hidden_dims) == len(self.num_layers) == len(self.seq_lens)
+        if not is_equal_num_stages:
+            raise ValueError("hidden_dims, num_layers and seq_lens are not of the same length")
+
+        if isinstance(self.block, list) and len(self.block) != len(self.hidden_dims):
+            raise ValueError(
+                "When given as a list of blocks, must have the appropriate number of stages"
+            )
+        return self
+
+    # https://docs.pydantic.dev/2.0/usage/computed_fields/
+    @computed_field  # type: ignore[misc]
+    @property
+    def stage_blocks(self) -> list[StageBlock]:
         if isinstance(self.block, list):
-            assert len(self.block) == len(
-                self.hidden_dims
-            ), "If blocks are given as list, lengths must match"
             return self.block
         return list(repeat(self.block, len(self.hidden_dims)))

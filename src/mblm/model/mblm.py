@@ -20,8 +20,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
 
+import logging
 import math
-from typing import Literal, cast, overload
+from typing import Iterable, Literal, Sequence, cast, overload
 
 import torch
 import torch.nn.functional as F  # noqa: N812
@@ -31,6 +32,7 @@ from torch import nn
 from torch.utils.checkpoint import checkpoint
 from tqdm import tqdm
 
+from mblm.model.block import StageBlock
 from mblm.model.config import MBLMModelConfig, MBLMReturnType
 from mblm.model.utils import ByteToUtf8Streamer, RoPE, gumbel_sample, top_k
 
@@ -62,14 +64,12 @@ class MBLM(nn.Module):
 
     def __init__(self, cfg: MBLMModelConfig):
         super().__init__()
+
         assert len(cfg.hidden_dims) == len(cfg.num_layers) == len(cfg.seq_lens)
+        if cfg.train_checkpoint_chunks:
+            assert len(cfg.hidden_dims) - 1 == len(cfg.train_checkpoint_chunks)
 
         self.num_stages = len(cfg.hidden_dims)
-
-        if cfg.train_checkpoint_chunks:
-            assert self.num_stages - 1 == len(cfg.train_checkpoint_chunks)
-
-        self.model_dims = cfg.hidden_dims
         self.seq_lens = cfg.seq_lens
         self.pad_token_id = cfg.pad_token_id
         self.checkpoint_chunks: list[int | None] = (
@@ -79,18 +79,41 @@ class MBLM(nn.Module):
         )
 
         self.start_tokens = nn.ParameterList(
-            [nn.Parameter(torch.randn(model_dim)) for model_dim in self.model_dims]
+            [nn.Parameter(torch.randn(model_dim)) for model_dim in cfg.hidden_dims]
         )
 
-        self.patch_pos_embs = nn.ModuleList()
+        self.pos_embs = self._init_positional_embeddings(
+            cfg.hidden_dims, cfg.seq_lens, cfg.stage_blocks
+        )
 
-        for model_dim, seq_len, block in zip(self.model_dims, cfg.seq_lens, cfg.blocks()):
-            if not block.patch_pos_emb_type:
-                self.patch_pos_embs.append(nn.Identity())
-            elif block.patch_pos_emb_type == "fixed":
-                self.patch_pos_embs.append(nn.Embedding(seq_len, model_dim))
-            elif block.patch_pos_emb_type == "rope":
-                self.patch_pos_embs.append(
+        self.token_embs_rev = self._init_token_embeddings(
+            cfg.hidden_dims, cfg.seq_lens, cfg.num_tokens, cfg.pad_token_id
+        )
+
+        self.stage_models, self.to_next_stage_proj = self._init_models_at_stages(
+            cfg.hidden_dims, cfg.seq_lens, cfg.num_layers, cfg.stage_blocks
+        )
+
+        self.to_logits = nn.Linear(cfg.hidden_dims[-1], cfg.num_tokens)
+
+    @classmethod
+    def _init_positional_embeddings(
+        cls,
+        model_dims: Iterable[int],
+        seq_lens: Iterable[int],
+        blocks: Iterable[StageBlock],
+    ) -> nn.ModuleList:
+        """
+        Create positional embeddings for each patch.
+        """
+        modules = nn.ModuleList()
+        for model_dim, seq_len, block in zip(model_dims, seq_lens, blocks):
+            if not block.pos_emb_type:
+                modules.append(nn.Identity())
+            elif block.pos_emb_type == "fixed":
+                modules.append(nn.Embedding(seq_len, model_dim))
+            elif block.pos_emb_type == "rope":
+                modules.append(
                     RoPE(
                         model_dim,
                         # only used for caching, will not fail if we're feeding
@@ -99,43 +122,65 @@ class MBLM(nn.Module):
                         max_seq_len=seq_len,
                     )
                 )
+        return modules
 
-        local_dim = self.model_dims[-1]  # D_n
-
-        # token embeddings are created in reverse order from local to global:
-        # [(V, D_n), ..., (V, D_1)]
-        self.token_embs_rev = nn.ModuleList(
-            [nn.Embedding(cfg.num_tokens, local_dim, padding_idx=self.pad_token_id)]
+    @classmethod
+    def _init_token_embeddings(
+        cls,
+        model_dims: Sequence[int],
+        seq_lens: Sequence[int],
+        vocab_size: int,
+        pad_token_id: int,
+    ) -> nn.ModuleList:
+        """
+        Embed the tokens for each stage (in reverse order).
+        """
+        local_dim = model_dims[-1]
+        token_embs_rev = nn.ModuleList(
+            [nn.Embedding(vocab_size, local_dim, padding_idx=pad_token_id)]
         )
-
         patch_size = 1
-        for dim_out, seq_len in zip(
+        for model_dim, seq_len in zip(
             # all except the local model
-            reversed(self.model_dims[:-1]),  # (D_n-1, ..., D_1)
-            reversed(self.seq_lens[1:]),  # (P_2, ..., P_n)
+            reversed(model_dims[:-1]),  # (D_n-1, ..., D_1)
+            reversed(seq_lens[1:]),  # (P_2, ..., P_n)
         ):
+            # for the global models, fuse the embedding and patch projection
+            # step
             patch_size *= seq_len
-            self.token_embs_rev.append(
+            token_embs_rev.append(
                 nn.Sequential(
-                    nn.Embedding(cfg.num_tokens, local_dim, padding_idx=self.pad_token_id),
+                    nn.Embedding(vocab_size, local_dim, padding_idx=pad_token_id),
                     Rearrange("... r d -> ... (r d)"),
                     nn.LayerNorm(patch_size * local_dim),
-                    nn.Linear(patch_size * local_dim, dim_out),
-                    nn.LayerNorm(dim_out),
+                    nn.Linear(patch_size * local_dim, model_dim),
+                    nn.LayerNorm(model_dim),
                 )
             )
+        return token_embs_rev
 
-        self.stage_models = nn.ModuleList([])
-        self.to_next_stage_proj = nn.ModuleList([])
+    @classmethod
+    def _init_models_at_stages(
+        cls,
+        model_dims: Sequence[int],
+        seq_lens: Sequence[int],
+        num_stage_layers: Iterable[int],
+        blocks: Iterable[StageBlock],
+    ) -> tuple[nn.ModuleList, nn.ModuleList]:
+        """
+        Initialize the models and next-stage projections for each stage.
+        """
+        stage_models = nn.ModuleList([])
+        to_next_stage_proj = nn.ModuleList([])
 
         for block, model_dim, num_layers, next_model_dim, next_seq_len in zip(
-            cfg.blocks(),
-            self.model_dims,
-            cfg.num_layers,
-            tuple(self.model_dims[1:]) + (None,),
-            tuple(self.seq_lens[1:]) + (None,),
+            blocks,
+            model_dims,
+            num_stage_layers,
+            tuple(model_dims[1:]) + (None,),
+            tuple(seq_lens[1:]) + (None,),
         ):
-            self.stage_models.append(block.to_model(model_dim=model_dim, num_layers=num_layers))
+            stage_models.append(block.to_model(model_dim=model_dim, num_layers=num_layers))
 
             proj: torch.nn.Module = nn.Identity()
 
@@ -146,71 +191,14 @@ class MBLM(nn.Module):
                     Rearrange("b m (n d) -> (b m) n d", n=next_seq_len),
                 )
 
-            self.to_next_stage_proj.append(proj)
-
-        self.to_logits = nn.Linear(local_dim, cfg.num_tokens)
-
-    @torch.inference_mode()
-    def generate(
-        self,
-        prime: torch.Tensor | None = None,
-        stream: ByteToUtf8Streamer | None = None,
-        num_tokens_to_generate: int | None = None,
-        end_of_gen_token_id: int = -1,
-        temperature: float = 1.0,
-        filter_thres: float = 1.0,
-        enable_progress: bool = True,
-    ) -> torch.Tensor:
-        """
-        Autoregressively generate tokens.
-
-        Args:
-            prime: The prompt as a 1D tensor of type torch.long. Batches are
-                not supported for now
-            stream: Instead of generating and then returning the sequene, stream
-                the intermediate results. Only possible when the bytes represent
-                UTF-8 encoded text
-            num_tokens_to_generate: If set, ignore the context window and
-                generate an exact amount of tokens. If `None`, generate up to
-                the maximum possible sequence length.
-            temperature: A float in the range (0, 1] that determines the
-                temperature. 1 means deterministic, 0.1 very random. Has
-                no effect if `filter_thres` is set to 1
-            filter_thres: A float in the range [0, 1] to determine the
-                threshold for the top k logits. 1 means the token with
-                the maximum logit is sampled.
-        """
-        if prime is not None:
-            assert prime.ndim == 1, "Batch mode not supported"
-            prime = prime.unsqueeze(0)
-        else:
-            device = next(self.parameters()).device
-            prime = torch.empty((1, 0), dtype=torch.long, device=device)
-
-        total_iters = num_tokens_to_generate or math.prod(self.seq_lens) - prime.shape[-1]
-
-        iter_rng = range(total_iters)
-        iterator = tqdm(iter_rng, leave=False) if (stream is None and enable_progress) else iter_rng
-
-        sequence = prime
-        for _ in iterator:
-            logits = self.forward(sequence, return_type=MBLMReturnType.LOGITS)[:, -1]
-            logits = top_k(logits, thres=filter_thres)
-            sampled = gumbel_sample(logits, dim=-1, temperature=temperature)
-            sequence = torch.cat((sequence, rearrange(sampled, "b -> b 1")), dim=-1)
-
-            newest_token = int(sampled.item())
-
-            if stream is not None:
-                stream.write(newest_token)
-
-            if newest_token == end_of_gen_token_id:
-                break
-        return sequence.squeeze()
+            to_next_stage_proj.append(proj)
+        return stage_models, to_next_stage_proj
 
     def forward_empty(self, batch_size: int) -> torch.Tensor:
-        # take care of special case where you sample from input of 0 (start
-        # token only)
+        """
+        Take care of special case where you sample from input of length 0 (start
+        token only).
+        """
 
         prev_stage_tokens_repr: torch.Tensor | None = None
         tokens: torch.Tensor = torch.empty(0)
@@ -298,18 +286,18 @@ class MBLM(nn.Module):
         # in the 2nd example, L = prod(seq_lens) = 5 * 4 * 3 = 60 = P_1 = P_1'
         if flattened_dims:
             # pad/fill up all inner sequence lengths (all except most global)
-            inner_seq_lens = self.seq_lens[1:]
-            multiple_of = math.prod(inner_seq_lens)
+            local_seq_lens = self.seq_lens[1:]
+            multiple_of = math.prod(local_seq_lens)
             # use the complement of modulo - the difference to the next multiple
             # of multiple_of - to infer the right padding length
             padding = -flat_seq_len % multiple_of
             input_ids = F.pad(input_ids, (0, padding), value=self.pad_token_id)
             # reshape and infer the P_1' dimension
-            input_ids = input_ids.reshape(batch_size, -1, *inner_seq_lens)
+            input_ids = input_ids.reshape(batch_size, -1, *local_seq_lens)
 
         # make sure the above condition holds, i.e., P_1' <= P_1
         _P_1_prime, _P_1 = input_ids.shape[1], self.seq_lens[0]  # noqa: N806
-        fixed_global_patch_encoding = isinstance(self.patch_pos_embs[0], nn.Embedding)
+        fixed_global_patch_encoding = isinstance(self.pos_embs[0], nn.Embedding)
         if fixed_global_patch_encoding:
             assert _P_1_prime <= _P_1, (
                 f"Because you are using a fixed global patch embedding, "
@@ -329,7 +317,7 @@ class MBLM(nn.Module):
         # [2]: (B, P_1', P_2, P_3, D_3)
         for stage_idx, pos_emb, token_emb in zip(
             range(self.num_stages - 1, -1, -1),
-            reversed(self.patch_pos_embs),
+            reversed(self.pos_embs),
             self.token_embs_rev,
         ):
             stage_token_embs: torch.Tensor = token_emb(input_ids)
@@ -393,11 +381,12 @@ class MBLM(nn.Module):
                     (0, 0, 1, 0),
                     value=0,
                 )
+                _start_token = stage_tokens[..., 0, :]
                 stage_tokens = stage_tokens + prev_stage_tokens_repr
+                assert _start_token.equal(stage_tokens[..., 0, :])
             # stage_tokens is now [B, P_n, D_n]. for the first stage, B is the
             # actual batch size whereas for the other stages, the batch size
-            # corresponds to the sequence length of the previous hierarchy
-            # stage
+            # corresponds to the sequence length of the previous hierarchy stage
 
             # skip checkpointing for the first global stage
             if checkpoint_chunk is None:
@@ -436,33 +425,37 @@ class MBLM(nn.Module):
 
         logits = self.to_logits.forward(attended)  # (B, P_1', P_2, ..., 1 + P_n, V)
 
+        logits_out = logits
+
+        if flattened_dims:
+            # drop the start tokens and combine inner dimensions into one
+            logits_out = rearrange(logits_out[..., 1:, :], "b ... v -> b (...) v")
+            # remove the padding
+            logits_out = logits_out[:, :flat_seq_len]
+
         if return_type == MBLMReturnType.LOGITS:
-            if flattened_dims:
-                # drop the start tokens and combine inner dimensions into one
-                logits = rearrange(logits[..., 1:, :], "b ... v -> b (...) v")
-                # remove the padding
-                logits = logits[:, :flat_seq_len]
-            return logits
+            return logits_out
 
         # the most local sequences still contain the preprended start tokens
         # (i.e., the logits) - extract this token once and later prepend it to
         # the flattened sequence
-        first_start_token_index = (slice(None), *((0,) * (logits.ndim - 2)), slice(None))
+        first_start_token_logits_idx = (slice(None), *((0,) * (logits.ndim - 2)), slice(None))
         # extract it
-        start_token = logits[first_start_token_index]  # type: ignore
+        start_token_logits = logits[first_start_token_logits_idx]  # type: ignore
+
         # drop ALL start tokens and combine inner dimensions into one...
-        logits = rearrange(logits[..., 1:, :], "b ... v -> b (...) v")
+        logits_rearranged = rearrange(logits[..., 1:, :], "b ... v -> b (...) v")
 
         # spread across batches
-        start_token = rearrange(start_token, "b v -> b 1 v")
+        start_token_logits = rearrange(start_token_logits, "b v -> b 1 v")
         # right-shift by one by appending the start token to the flat sequence
-        logits = torch.cat((start_token, logits), dim=-2)
+        logits_rearranged = torch.cat((start_token_logits, logits_rearranged), dim=-2)
         # drop the last item to match lengths
-        logits = logits[..., :-1, :]
+        logits_rearranged = logits_rearranged[..., :-1, :]
 
         # rearrange for loss calculation: the k-dimensional loss expects (B, V,
         # L)
-        preds = rearrange(logits, "b l v -> b v l")
+        preds = rearrange(logits_rearranged, "b l v -> b v l")
         targets = rearrange(input_ids, "b ... -> b (...)")
 
         # same shape as targets with 0 everywhere where the token equals the pad
@@ -493,9 +486,67 @@ class MBLM(nn.Module):
         if torch.isnan(loss):
             # special case when the loss is zero across target elements - should
             # theoretically never happen
-            print("Edge case detected, loss is nan")
-            loss = torch.zeros_like(loss)
+            logging.fatal("Edge case detected, loss is nan")
+            loss = torch.zeros_like(loss, requires_grad=True)
 
         if return_type == MBLMReturnType.LOSS:
             return loss
-        return loss, logits
+        return loss, logits_out
+
+    @torch.inference_mode()
+    def generate(
+        self,
+        prime: torch.Tensor | None = None,
+        stream: ByteToUtf8Streamer | None = None,
+        num_tokens_to_generate: int | None = None,
+        end_of_gen_token_id: int = -1,
+        temperature: float = 1.0,
+        filter_thres: float = 1.0,
+        enable_progress: bool = True,
+    ) -> torch.Tensor:
+        """
+        Autoregressively generate tokens.
+
+        Args:
+            prime: The prompt as a 1D tensor of type torch.long. Batches are
+                not supported for now
+            stream: Instead of generating and then returning the sequene, stream
+                the intermediate results. Only possible when the bytes represent
+                UTF-8 encoded text
+            num_tokens_to_generate: If set, ignore the context window and
+                generate an exact amount of tokens. If `None`, generate up to
+                the maximum possible sequence length.
+            temperature: A float in the range (0, 1] that determines the
+                temperature. 1 means deterministic, 0.1 very random. Has
+                no effect if `filter_thres` is set to 1
+            filter_thres: A float in the range [0, 1] to determine the
+                threshold for the top k logits. 1 means the token with
+                the maximum logit is sampled.
+        """
+        if prime is not None:
+            assert prime.ndim == 1, "Batch mode not supported"
+            prime = prime.unsqueeze(0)
+        else:
+            device = next(self.parameters()).device
+            prime = torch.empty((1, 0), dtype=torch.long, device=device)
+
+        total_iters = num_tokens_to_generate or math.prod(self.seq_lens) - prime.shape[-1]
+
+        iter_rng = range(total_iters)
+        iterator = tqdm(iter_rng, leave=False) if (stream is None and enable_progress) else iter_rng
+
+        sequence = prime
+        for _ in iterator:
+            logits = self.forward(sequence, return_type=MBLMReturnType.LOGITS)[:, -1]
+            logits = top_k(logits, thres=filter_thres)
+            sampled = gumbel_sample(logits, dim=-1, temperature=temperature)
+            sequence = torch.cat((sequence, rearrange(sampled, "b -> b 1")), dim=-1)
+
+            newest_token = int(sampled.item())
+
+            if stream is not None:
+                stream.write(newest_token)
+
+            if newest_token == end_of_gen_token_id:
+                break
+        return sequence.squeeze()

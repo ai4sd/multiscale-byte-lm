@@ -29,7 +29,7 @@ from typing import Sequence
 from tabulate import tabulate
 
 from mblm import MBLM
-from mblm.scripts.train_mblm import TrainEntryConfig
+from mblm.train.mblm import TrainEntryConfig
 from mblm.utils.io import load_yml
 from mblm.utils.misc import count_params
 
@@ -60,8 +60,6 @@ def print_model_sizes(
         key=lambda pc: (pc[1].params.input_seq_len, pc[1].params.seq_lens),
     )
     for path, conf in configs:
-        if conf.io.dataset_id != "pg19":
-            continue
         inp_len = conf.params.input_seq_len
         seg_lens = conf.params.seq_lens
         layers = str(conf.params.num_layers)

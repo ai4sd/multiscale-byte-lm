@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 __copyright__ = """MIT License
 
 Copyright (c) 2024 - IBM Research
@@ -24,14 +26,14 @@ import json
 import os
 import random
 from pathlib import Path
-from typing import Generator, Literal, TypedDict, overload
+from typing import TYPE_CHECKING, Generator, Literal, TypedDict, overload
 
 import torch
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing_extensions import Unpack
 
-from mblm.data.datasets import BatchWithLossMask, DistributedDataset, DistributedDatasetConfig
-from mblm.data.types import ModelMode
+from mblm.data.datasets import DistributedDataset, DistributedDatasetConfig
+from mblm.data.types import BatchWithLossMask, ModelMode
 from mblm.data.utils import (
     Bytes,
     ColorSpace,
@@ -41,6 +43,9 @@ from mblm.data.utils import (
     shift_remap_tensor,
     target_loss_mask,
 )
+
+if TYPE_CHECKING:
+    from mblm.train.mblm import TrainEntryConfig
 
 
 class ClevrFunction(TypedDict):
@@ -55,6 +60,17 @@ class ClevrQuestion(TypedDict):
     image_filename: str
     question_family_index: int
     program: list[ClevrFunction]
+
+
+class ClevrModelGeneration(BaseModel):
+    id_model: str
+    sample_idx: int
+    question: str
+    question_type: str
+    answer_gen: list[int]
+    answer_truth: list[int]
+    ce: float
+    timestamp: str
 
 
 class ClevrOptionalArgs(BaseModel):
@@ -209,6 +225,25 @@ class Clevr(DistributedDataset[BatchWithLossMask]):
             data_size=len(self.entries),
             is_sequential=False,
             **config,
+        )
+
+    @staticmethod
+    def from_train_entry_config(
+        config: TrainEntryConfig,
+        mode: ModelMode,
+        worker_id: int,
+        num_workers: int,
+    ) -> DistributedDataset[BatchWithLossMask]:
+        # cannot pass None to model_validate
+        optional_args = ClevrOptionalArgs.model_validate(config.io.dataset_args or dict())
+        return Clevr(
+            data_dir=config.io.dataset_dir,
+            mode=mode,
+            pad_token_id=config.params.pad_token_id,
+            seq_len=config.params.input_seq_len,
+            worker_id=worker_id,
+            num_workers=num_workers,
+            optional_args=optional_args,
         )
 
     @staticmethod

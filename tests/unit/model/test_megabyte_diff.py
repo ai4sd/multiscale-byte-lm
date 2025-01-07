@@ -29,7 +29,7 @@ class TestMegabyte:
         self,
         model_dims: tuple[int, ...],
         seq_lens: tuple[int, ...],
-        use_fixed_patch_use_encoding: bool = False,
+        use_fixed_pos_encoding: bool = False,
     ):
         num_layers = (1,) * len(model_dims)
 
@@ -46,7 +46,7 @@ class TestMegabyte:
             ff_mult=self.ff_mult,
             ff_dropout=self.dropout,
             rel_pos=self.use_rot_emb,
-            pos_emb=use_fixed_patch_use_encoding,
+            pos_emb=use_fixed_pos_encoding,
             flash_attn=self.use_flash_attn,
         )
         # generating random numbers changes the stage of the random number
@@ -67,7 +67,7 @@ class TestMegabyte:
                     attn_dropout=self.dropout,
                     ff_multiplier=self.ff_mult,
                     ff_dropout=self.dropout,
-                    patch_pos_emb_type="fixed" if use_fixed_patch_use_encoding else None,
+                    pos_emb_type="fixed" if use_fixed_pos_encoding else None,
                     attn_use_rot_embs=self.use_rot_emb,
                     use_flash_attn=self.use_flash_attn,
                 ),
@@ -86,7 +86,7 @@ class TestMegabyte:
     ):
         original, patched = self.boostrap_models(model_dims, seq_lens)
 
-        input_tensor = self.make_input_tensor(9)
+        input_tensor = self.make_input_tensor(8)
         loss_original = original.forward(input_tensor, return_loss=True)
         loss_patched = patched.forward(input_tensor, return_type=MBLMReturnType.LOSS)
         assert loss_original.isclose(
@@ -100,8 +100,12 @@ class TestMegabyte:
         loss_patched.backward()
 
         logits_original = original.forward(input_tensor, return_loss=False)
-        logits_patched = patched.forward(input_tensor, return_type=MBLMReturnType.LOGITS)
-        assert logits_original.equal(logits_patched), f"preds do not match - model dim {model_dims}"
+        logits_patched_1 = patched.forward(input_tensor, return_type=MBLMReturnType.LOGITS)
+        _, logits_patched_2 = patched.forward(input_tensor, return_type=MBLMReturnType.LOSS_LOGITS)
+
+        assert logits_original.equal(logits_patched_1) and logits_patched_1.equal(
+            logits_patched_2
+        ), f"preds do not match - model dim {model_dims}"
         assert (
             logits_original.dtype == loss_patched.dtype
         ), "pred dtypes do not match - model dim {model_dims}"
@@ -112,9 +116,7 @@ class TestMegabyte:
         model_dims: tuple[int, ...],
         seq_lens: tuple[int, ...],
     ):
-        original, patched = self.boostrap_models(
-            model_dims, seq_lens, use_fixed_patch_use_encoding=True
-        )
+        original, patched = self.boostrap_models(model_dims, seq_lens, use_fixed_pos_encoding=True)
         input_seq_len = math.prod(seq_lens)  # max sequence length possible
         input_tensor = self.make_input_tensor(input_seq_len)
         input_tensor_too_large = self.make_input_tensor(input_seq_len + 1)

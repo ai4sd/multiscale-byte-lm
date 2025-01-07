@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 __copyright__ = """MIT License
 
 Copyright (c) 2024 - IBM Research
@@ -23,15 +25,31 @@ SOFTWARE."""
 import os
 import random
 from pathlib import Path
-from typing import Generator
+from typing import TYPE_CHECKING, Generator
 
 import torch
 import tqdm
+from pydantic import BaseModel
 from typing_extensions import Unpack
 
-from mblm.data.datasets import BatchWithLossMask, DistributedDataset, DistributedDatasetConfig
-from mblm.data.types import ModelMode
+from mblm.data.datasets import DistributedDataset, DistributedDatasetConfig
+from mblm.data.types import BatchWithLossMask, ModelMode
 from mblm.data.utils import Bytes
+
+if TYPE_CHECKING:
+    from mblm.train.mblm import TrainEntryConfig
+
+
+class PG19ModelGeneration(BaseModel):
+    id_model: str
+    book_id: str
+    book_txt_offset: int
+    ctx_len: int
+    generated: list[int]
+    truth: list[int]
+    ce: float
+    generation_time: float
+    timestamp: str
 
 
 class PG19(DistributedDataset[BatchWithLossMask]):
@@ -80,6 +98,25 @@ class PG19(DistributedDataset[BatchWithLossMask]):
             is_sequential=True,
             **config,
         )
+
+    @staticmethod
+    def from_train_entry_config(
+        config: TrainEntryConfig,
+        mode: ModelMode,
+        worker_id: int,
+        num_workers: int,
+    ) -> DistributedDataset[BatchWithLossMask]:
+        return PG19(
+            data_dir=config.io.dataset_dir,
+            mode=mode,
+            seq_len=config.params.input_seq_len,
+            worker_id=worker_id,
+            num_workers=num_workers,
+        )
+
+    @staticmethod
+    def supports_test_mode() -> bool:
+        return True
 
     def get_sample(self, from_idx: int) -> BatchWithLossMask:
         """
