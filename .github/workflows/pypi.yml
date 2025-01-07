@@ -18,4 +18,7 @@ jobs:
       - name: Build
         run: uv build
       - name: Publish
+        env:
+          PYPI_USERNAME: __token__
+          PYPI_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
         run: uv publish --publish-url https://upload.pypi.org/legacy/ --username __token__ --password $PYPI_PASSWORD
