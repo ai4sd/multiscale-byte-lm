@@ -1,8 +1,7 @@
 import pytest
 import torch
 
-from mblm import MBLM, MBLMModelConfig, MBLMReturnType
-from mblm.model.transformer import TransformerBlockConfig
+from mblm import MBLM, MBLMModelConfig, MBLMReturnType, TransformerBlock
 
 
 class TestMBLM:
@@ -34,7 +33,7 @@ class TestMBLM:
                 pad_token_id=self.pad_token_id,
                 num_layers=(1,) * len(model_dims),
                 train_checkpoint_chunks=None,
-                block=TransformerBlockConfig(
+                block=TransformerBlock(
                     attn_head_dims=self.dim_attn_heads,
                     attn_num_heads=self.num_attn_heads,
                     attn_dropout=self.dropout,

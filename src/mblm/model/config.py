@@ -27,12 +27,12 @@ from typing import Any, Sequence
 from pydantic import BaseModel, computed_field, field_validator, model_validator
 
 from mblm.model.block import StageBlock, StageBlockRegistry
-from mblm.model.mamba import MambaBlockConfig
-from mblm.model.transformer import TransformerBlockConfig
+from mblm.model.mamba import MambaBlock
+from mblm.model.transformer import TransformerBlock
 
 block_registry = StageBlockRegistry()
-block_registry.register(TransformerBlockConfig)
-block_registry.register(MambaBlockConfig)
+block_registry.register(TransformerBlock)
+block_registry.register(MambaBlock)
 
 
 class MBLMReturnType(str, Enum):

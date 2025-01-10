@@ -25,12 +25,12 @@ from typing import Callable, Iterable, cast
 
 import torch
 from MEGABYTE_pytorch.megabyte import Attention, FeedForward, RMSNorm, RotaryEmbedding, token_shift
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from mblm.model.block import StageBlock
 
 
-class TransformerBlockConfig(StageBlock, BaseModel):
+class TransformerBlock(StageBlock):
     """
     General config for creating a Transformer Decocer block inside MBLM.
     """

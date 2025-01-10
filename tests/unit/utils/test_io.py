@@ -9,9 +9,8 @@ import pytest
 import torch
 from pydantic import BaseModel
 
-from mblm import MBLM, MBLMModelConfig
+from mblm import MBLM, MBLMModelConfig, TransformerBlock
 from mblm.model.embeddings import MBLM_TOKEN_EMB_MIGRATION
-from mblm.model.transformer import TransformerBlockConfig
 from mblm.utils.io import (
     CSVWriter,
     NDJSONWriter,
@@ -158,7 +157,7 @@ class TestModelCheckpointing:
                     num_layers=(1, 1),
                     seq_lens=(8192, 8),
                     train_checkpoint_chunks=None,
-                    block=TransformerBlockConfig(
+                    block=TransformerBlock(
                         attn_head_dims=64,
                         attn_num_heads=8,
                         attn_use_rot_embs=True,
