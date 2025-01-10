@@ -1,10 +1,11 @@
 # Filename: train_my_mblm.py
 
 import torch
+from typing_extensions import Unpack
+
+from mblm import MambaBlock, TransformerBlock
 from mblm.data.datasets import DistributedDataset, DistributedDatasetConfig
 from mblm.data.types import BatchWithLossMask, ModelMode
-from mblm.model.mamba import MambaBlockConfig
-from mblm.model.transformer import TransformerBlockConfig
 from mblm.train.core.config import CoreTrainConfig
 from mblm.train.mblm import (
     TrainEntryConfig,
@@ -13,7 +14,6 @@ from mblm.train.mblm import (
     dataset_registry,
     train_mblm,
 )
-from typing_extensions import Unpack
 
 
 class MyDataset(DistributedDataset[BatchWithLossMask]):
@@ -104,14 +104,14 @@ config = TrainEntryConfig(
         pad_token_id=256,
         train_checkpoint_chunks=None,
         block=[
-            MambaBlockConfig(
+            MambaBlock(
                 d_state=128,
                 d_conv=4,
                 expand=2,
                 headdim=64,
                 pos_emb_type=None,
             ),
-            TransformerBlockConfig(
+            TransformerBlock(
                 attn_head_dims=64,
                 attn_num_heads=16,
                 attn_use_rot_embs=True,

@@ -5,12 +5,13 @@ seed_everything(8)
 
 def test_from_config():
     import torch
+
     from mblm import (
         MBLM,
-        MambaBlockConfig,
+        MambaBlock,
         MBLMModelConfig,
         MBLMReturnType,
-        TransformerBlockConfig,
+        TransformerBlock,
     )
 
     mblm = MBLM(
@@ -22,14 +23,14 @@ def test_from_config():
             pad_token_id=256,
             train_checkpoint_chunks=None,
             block=[
-                MambaBlockConfig(
+                MambaBlock(
                     d_state=128,
                     d_conv=4,
                     expand=2,
                     headdim=64,
                     pos_emb_type=None,
                 ),
-                TransformerBlockConfig(
+                TransformerBlock(
                     attn_head_dims=64,
                     attn_num_heads=16,
                     attn_use_rot_embs=True,
@@ -54,6 +55,7 @@ def test_from_config():
 def test_from_yaml():
     import torch
     import yaml
+
     from mblm import MBLM, MBLMModelConfig, MBLMReturnType
 
     yml_model_config = """

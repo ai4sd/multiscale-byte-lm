@@ -4,8 +4,7 @@ import pytest
 import torch
 from MEGABYTE_pytorch import MEGABYTE
 
-from mblm import MBLM, MBLMModelConfig, MBLMReturnType
-from mblm.model.transformer import TransformerBlockConfig
+from mblm import MBLM, MBLMModelConfig, MBLMReturnType, TransformerBlock
 from mblm.utils.seed import seed_everything
 
 
@@ -61,7 +60,7 @@ class TestMegabyte:
                 pad_token_id=self.pad_token_id,
                 num_layers=num_layers,
                 train_checkpoint_chunks=None,
-                block=TransformerBlockConfig(
+                block=TransformerBlock(
                     attn_head_dims=self.dim_attn_heads,
                     attn_num_heads=self.num_attn_heads,
                     attn_dropout=self.dropout,

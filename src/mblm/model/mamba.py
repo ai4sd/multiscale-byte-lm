@@ -21,13 +21,13 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
 
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from mblm.model.block import StageBlock
 from mblm.model.mamba_shim import Mamba1, Mamba1Config, Mamba2Mixer
 
 
-class MambaBlockConfig(StageBlock, BaseModel):
+class MambaBlock(StageBlock):
     """
     General config for creating a Mamba block inside MBLM.
     Uses roughly 3 * expand * d_model^2 parameters.

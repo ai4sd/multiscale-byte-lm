@@ -5,17 +5,13 @@ seed_everything(8)
 
 def test_from_config():
     import torch
-    from mblm import (
-        MBLM,
-        MBLMModelConfig,
-        MBLMReturnType,
-        TransformerBlockConfig,
-    )
+    from pydantic import Field
+
+    from mblm import MBLM, MBLMModelConfig, MBLMReturnType, TransformerBlock
     from mblm.model.block import StageBlock
-    from pydantic import BaseModel, Field
 
     # Define any custom model
-    class MyLSTM(torch.nn.Module):
+    class LSTM(torch.nn.Module):
         def __init__(self, lstm: torch.nn.LSTM):
             super().__init__()
             self.lstm = lstm
@@ -25,15 +21,15 @@ def test_from_config():
             out, _ = self.lstm(input_ids)
             return out
 
-    # Add a block config and inherit from StageBlock and BaseModel
-    class LSTMBlockConfig(StageBlock, BaseModel):
+    # Add a block config and inherit from StageBlock
+    class LSTMBlock(StageBlock):
         block_type: str = Field(init=False, default="lstm")
 
         # Add whatever is needed
         dropout: float
 
         def to_model(self, model_dim: int, num_layers: int) -> torch.nn.Module:
-            return MyLSTM(
+            return LSTM(
                 torch.nn.LSTM(
                     input_size=model_dim,
                     hidden_size=model_dim,
@@ -52,11 +48,11 @@ def test_from_config():
             pad_token_id=256,
             train_checkpoint_chunks=None,
             block=[
-                LSTMBlockConfig(
+                LSTMBlock(
                     dropout=0.1,
                     pos_emb_type=None,
                 ),
-                TransformerBlockConfig(
+                TransformerBlock(
                     attn_head_dims=64,
                     attn_num_heads=16,
                     attn_use_rot_embs=True,
@@ -74,10 +70,11 @@ def test_from_config():
 def test_from_yaml():
     import torch
     import yaml
+    from pydantic import Field
+
     from mblm import MBLM, MBLMModelConfig, MBLMReturnType
     from mblm.model.block import StageBlock
     from mblm.model.config import block_registry  # Add this!
-    from pydantic import BaseModel, Field
 
     # Define any custom model
     class MyLSTM(torch.nn.Module):
@@ -90,8 +87,8 @@ def test_from_yaml():
             out, _ = self.lstm(input_ids)
             return out
 
-    # Add a block config and inherit from StageBlock and BaseModel
-    class LSTMBlockConfig(StageBlock, BaseModel):
+    # Add a block config and inherit from StageBlock
+    class LSTMBlockConfig(StageBlock):
         block_type: str = Field(init=False, default="lstm")
 
         # Add whatever is needed

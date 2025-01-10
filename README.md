@@ -46,12 +46,13 @@ MBLM can be used with the default Transformer Decoder or Mamba block. The below 
 
 ```py
 import torch
+
 from mblm import (
     MBLM,
-    MambaBlockConfig,
+    MambaBlock,
     MBLMModelConfig,
     MBLMReturnType,
-    TransformerBlockConfig,
+    TransformerBlock,
 )
 
 mblm = MBLM(
@@ -63,14 +64,14 @@ mblm = MBLM(
         pad_token_id=256,
         train_checkpoint_chunks=None,
         block=[
-            MambaBlockConfig(
+            MambaBlock(
                 d_state=128,
                 d_conv=4,
                 expand=2,
                 headdim=64,
                 pos_emb_type=None,
             ),
-            TransformerBlockConfig(
+            TransformerBlock(
                 attn_head_dims=64,
                 attn_num_heads=16,
                 attn_use_rot_embs=True,
@@ -97,6 +98,7 @@ Alternatively, you can read configuration from a YAML string (or file):
 ```py
 import torch
 import yaml
+
 from mblm import MBLM, MBLMModelConfig, MBLMReturnType
 
 yml_model_config = """
@@ -131,17 +133,13 @@ You can define custom stage blocks for MBLM as follows. A stageblock must provid
 
 ```py
 import torch
-from mblm import (
-    MBLM,
-    MBLMModelConfig,
-    MBLMReturnType,
-    TransformerBlockConfig,
-)
+from pydantic import Field
+
+from mblm import MBLM, MBLMModelConfig, MBLMReturnType, TransformerBlock
 from mblm.model.block import StageBlock
-from pydantic import BaseModel, Field
 
 # Define any custom model
-class MyLSTM(torch.nn.Module):
+class LSTM(torch.nn.Module):
     def __init__(self, lstm: torch.nn.LSTM):
         super().__init__()
         self.lstm = lstm
@@ -151,15 +149,15 @@ class MyLSTM(torch.nn.Module):
         out, _ = self.lstm(input_ids)
         return out
 
-# Add a block config and inherit from StageBlock and BaseModel
-class LSTMBlockConfig(StageBlock, BaseModel):
+# Add a block config and inherit from StageBlock
+class LSTMBlock(StageBlock):
     block_type: str = Field(init=False, default="lstm")
 
     # Add whatever is needed
     dropout: float
 
     def to_model(self, model_dim: int, num_layers: int) -> torch.nn.Module:
-        return MyLSTM(
+        return LSTM(
             torch.nn.LSTM(
                 input_size=model_dim,
                 hidden_size=model_dim,
@@ -178,11 +176,11 @@ mblm = MBLM(
         pad_token_id=256,
         train_checkpoint_chunks=None,
         block=[
-            LSTMBlockConfig(
+            LSTMBlock(
                 dropout=0.1,
                 pos_emb_type=None,
             ),
-            TransformerBlockConfig(
+            TransformerBlock(
                 attn_head_dims=64,
                 attn_num_heads=16,
                 attn_use_rot_embs=True,
@@ -202,10 +200,11 @@ If you want to parse a YAML config to a custom block, **register the block** bef
 ```py
 import torch
 import yaml
+from pydantic import Field
+
 from mblm import MBLM, MBLMModelConfig, MBLMReturnType
 from mblm.model.block import StageBlock
 from mblm.model.config import block_registry  # Add this!
-from pydantic import BaseModel, Field
 
 # Define any custom model
 class MyLSTM(torch.nn.Module):
@@ -218,8 +217,8 @@ class MyLSTM(torch.nn.Module):
         out, _ = self.lstm(input_ids)
         return out
 
-# Add a block config and inherit from StageBlock and BaseModel
-class LSTMBlockConfig(StageBlock, BaseModel):
+# Add a block config and inherit from StageBlock
+class LSTMBlockConfig(StageBlock):
     block_type: str = Field(init=False, default="lstm")
 
     # Add whatever is needed
@@ -269,10 +268,11 @@ If you want to use the MBLM trainer with [torchrun](https://pytorch.org/docs/sta
 # Filename: train_my_mblm.py
 
 import torch
+from typing_extensions import Unpack
+
+from mblm import MambaBlock, TransformerBlock
 from mblm.data.datasets import DistributedDataset, DistributedDatasetConfig
 from mblm.data.types import BatchWithLossMask, ModelMode
-from mblm.model.mamba import MambaBlockConfig
-from mblm.model.transformer import TransformerBlockConfig
 from mblm.train.core.config import CoreTrainConfig
 from mblm.train.mblm import (
     TrainEntryConfig,
@@ -281,7 +281,6 @@ from mblm.train.mblm import (
     dataset_registry,
     train_mblm,
 )
-from typing_extensions import Unpack
 
 
 class MyDataset(DistributedDataset[BatchWithLossMask]):
@@ -372,14 +371,14 @@ config = TrainEntryConfig(
         pad_token_id=256,
         train_checkpoint_chunks=None,
         block=[
-            MambaBlockConfig(
+            MambaBlock(
                 d_state=128,
                 d_conv=4,
                 expand=2,
                 headdim=64,
                 pos_emb_type=None,
             ),
-            TransformerBlockConfig(
+            TransformerBlock(
                 attn_head_dims=64,
                 attn_num_heads=16,
                 attn_use_rot_embs=True,
@@ -392,6 +391,7 @@ config = TrainEntryConfig(
 
 if __name__ == "__main__":
     train_mblm(config)
+
 ```
 
 Then, run the above file with:

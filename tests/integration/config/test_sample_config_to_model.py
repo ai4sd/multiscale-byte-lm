@@ -3,10 +3,8 @@ from typing import Iterable
 
 import pytest
 
-from mblm import MBLM, MBLMModelConfig
+from mblm import MBLM, MambaBlock, MBLMModelConfig, TransformerBlock
 from mblm.data.dataset.clevr import ClevrOptionalArgs
-from mblm.model.mamba import MambaBlockConfig
-from mblm.model.transformer import TransformerBlockConfig
 from mblm.train.mblm import TrainEntryConfig
 from mblm.utils.io import load_yml
 
@@ -31,8 +29,8 @@ class TestConfigToModel:
 
     def ensure_model_is_created(self, config: TrainEntryConfig) -> None:
         for b in config.params.stage_blocks:
-            assert isinstance(b, (TransformerBlockConfig, MambaBlockConfig))
-            if isinstance(b, TransformerBlockConfig):
+            assert isinstance(b, (TransformerBlock, MambaBlock))
+            if isinstance(b, TransformerBlock):
                 assert b.block_type == "transformer"
             else:
                 # mamba1, can be mamba2 (only if tested on Linux with mamba_ssm installed)
