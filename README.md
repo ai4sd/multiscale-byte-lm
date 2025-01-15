@@ -1,6 +1,6 @@
 # Multiscale Byte Language Model
 
-Multiscale Byte Language Model is a hierarchical byte-level sequence-to-sequence model for multimodal tasks.
+The Multiscale Byte Language Model is a model-agnostic, hierarchical architecture for causal byte-level language modeling that scales to million-length sequences.
 
 <p align="center">
     <img src="https://raw.githubusercontent.com/ai4sd/multiscale-byte-lm/refs/heads/main/assets/mblm.png" alt="mblm-architecture" width="600"/>
@@ -133,7 +133,6 @@ You can define custom stage blocks for MBLM as follows. A stageblock must provid
 
 ```py
 import torch
-from pydantic import Field
 
 from mblm import MBLM, MBLMModelConfig, MBLMReturnType, TransformerBlock
 from mblm.model.block import StageBlock
@@ -151,7 +150,7 @@ class LSTM(torch.nn.Module):
 
 # Add a block config and inherit from StageBlock
 class LSTMBlock(StageBlock):
-    block_type: str = Field(init=False, default="lstm")
+    block_type: str = "lstm"
 
     # Add whatever is needed
     dropout: float
@@ -200,7 +199,6 @@ If you want to parse a YAML config to a custom block, **register the block** bef
 ```py
 import torch
 import yaml
-from pydantic import Field
 
 from mblm import MBLM, MBLMModelConfig, MBLMReturnType
 from mblm.model.block import StageBlock
@@ -219,7 +217,7 @@ class MyLSTM(torch.nn.Module):
 
 # Add a block config and inherit from StageBlock
 class LSTMBlockConfig(StageBlock):
-    block_type: str = Field(init=False, default="lstm")
+    block_type: str = "lstm"
 
     # Add whatever is needed
     dropout: float

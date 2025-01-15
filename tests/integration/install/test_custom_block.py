@@ -5,7 +5,6 @@ seed_everything(8)
 
 def test_from_config():
     import torch
-    from pydantic import Field
 
     from mblm import MBLM, MBLMModelConfig, MBLMReturnType, TransformerBlock
     from mblm.model.block import StageBlock
@@ -23,7 +22,7 @@ def test_from_config():
 
     # Add a block config and inherit from StageBlock
     class LSTMBlock(StageBlock):
-        block_type: str = Field(init=False, default="lstm")
+        block_type: str = "lstm"
 
         # Add whatever is needed
         dropout: float
@@ -70,7 +69,6 @@ def test_from_config():
 def test_from_yaml():
     import torch
     import yaml
-    from pydantic import Field
 
     from mblm import MBLM, MBLMModelConfig, MBLMReturnType
     from mblm.model.block import StageBlock
@@ -89,7 +87,7 @@ def test_from_yaml():
 
     # Add a block config and inherit from StageBlock
     class LSTMBlockConfig(StageBlock):
-        block_type: str = Field(init=False, default="lstm")
+        block_type: str = "lstm"
 
         # Add whatever is needed
         dropout: float
