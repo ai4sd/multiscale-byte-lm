@@ -124,7 +124,7 @@ class CSVWriter(Generic[_TNamedTuple]):
 
         with self._lock:
             file_empty = self._file_is_empty()
-            with self._file.open("a", encoding="utf-8") as f:
+            with self._file.open("a", encoding="utf-8", newline="") as f:
                 writer = csv.writer(f)
                 if file_empty:
                     # automatically write a header once
