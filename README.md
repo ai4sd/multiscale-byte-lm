@@ -1,6 +1,6 @@
 # Multiscale Byte Language Model
 
-The Multiscale Byte Language Model is model-agnostic, hierarchical architecture for causal byte-level language modeling that scales to million-length sequences.
+The Multiscale Byte Language Model is a model-agnostic, hierarchical architecture for causal byte-level language modeling that scales to million-length sequences.
 
 <p align="center">
     <img src="https://raw.githubusercontent.com/ai4sd/multiscale-byte-lm/refs/heads/main/assets/mblm.png" alt="mblm-architecture" width="600"/>
