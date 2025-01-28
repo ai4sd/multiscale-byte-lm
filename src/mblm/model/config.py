@@ -107,7 +107,7 @@ class MBLMModelConfig(BaseModel):
     ) -> dict | list[dict]:
         if not isinstance(block, list):
             return block.model_dump(mode=info.mode)
-        return [b.model_dump() for b in block]
+        return [b.model_dump(mode=info.mode) for b in block]
 
     def stage_blocks(self) -> list[StageBlock]:
         if isinstance(self.block, list):
