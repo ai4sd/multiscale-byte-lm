@@ -24,7 +24,13 @@ from enum import Enum, auto
 from itertools import repeat
 from typing import Any, Sequence
 
-from pydantic import BaseModel, computed_field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    SerializationInfo,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 from mblm.model.block import StageBlock, StageBlockRegistry
 from mblm.model.mamba import MambaBlock
@@ -95,9 +101,14 @@ class MBLMModelConfig(BaseModel):
             )
         return self
 
-    # https://docs.pydantic.dev/2.0/usage/computed_fields/
-    @computed_field  # type: ignore[misc]
-    @property
+    @field_serializer("block")
+    def serialize_block(
+        self, block: StageBlock | list[StageBlock], info: SerializationInfo
+    ) -> dict | list[dict]:
+        if not isinstance(block, list):
+            return block.model_dump(mode=info.mode)
+        return [b.model_dump() for b in block]
+
     def stage_blocks(self) -> list[StageBlock]:
         if isinstance(self.block, list):
             return self.block
