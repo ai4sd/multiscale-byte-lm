@@ -7,6 +7,25 @@ authors = [
     { name = "Jannis Born", email = "jab@zurich.ibm.com" },
 ]
 readme = "README.md"
+keywords = [
+    "Machine Learning",
+    "Language Models",
+    "Byte Language Models",
+    "Hierarchical Architectures",
+    "Long Context Window",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 requires-python = ">=3.10"
 dependencies = [
     "einops>=0.8.0",
@@ -19,6 +38,11 @@ dependencies = [
     "pyyaml>=6.0.2",
     "tqdm>=4.66.5",
 ]
+
+[project.urls]
+homepage = "https://github.com/ai4sd/mblm"
+source = "https://github.com/ai4sd/mblm"
+releasenotes = "https://github.com/ai4sd/mblm/releases"
 
 [dependency-groups]
 dev = [

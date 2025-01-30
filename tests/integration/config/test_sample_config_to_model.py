@@ -28,7 +28,7 @@ class TestConfigToModel:
         return None
 
     def ensure_model_is_created(self, config: TrainEntryConfig) -> None:
-        for b in config.params.stage_blocks:
+        for b in config.params.stage_blocks():
             assert isinstance(b, (TransformerBlock, MambaBlock))
             if isinstance(b, TransformerBlock):
                 assert b.block_type == "transformer"

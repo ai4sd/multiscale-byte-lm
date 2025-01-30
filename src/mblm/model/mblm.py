@@ -81,9 +81,10 @@ class MBLM(nn.Module):
         self.start_tokens = nn.ParameterList(
             [nn.Parameter(torch.randn(model_dim)) for model_dim in cfg.hidden_dims]
         )
+        stage_blocks = cfg.stage_blocks()
 
         self.pos_embs = self._init_positional_embeddings(
-            cfg.hidden_dims, cfg.seq_lens, cfg.stage_blocks
+            cfg.hidden_dims, cfg.seq_lens, stage_blocks
         )
 
         self.token_embs_rev = self._init_token_embeddings(
@@ -91,7 +92,7 @@ class MBLM(nn.Module):
         )
 
         self.stage_models, self.to_next_stage_proj = self._init_models_at_stages(
-            cfg.hidden_dims, cfg.seq_lens, cfg.num_layers, cfg.stage_blocks
+            cfg.hidden_dims, cfg.seq_lens, cfg.num_layers, stage_blocks
         )
 
         self.to_logits = nn.Linear(cfg.hidden_dims[-1], cfg.num_tokens)
