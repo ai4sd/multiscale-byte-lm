@@ -59,11 +59,11 @@ check_types:
 
 .PHONY: lint
 lint:
-	uv run --no-sync ruff check src tests scripts
+	uv run ruff check src tests scripts
 
 .PHONY: format
 format:
-	uv run --no-sync ruff format src tests scripts
+	uv run ruff format src tests scripts
 
 .PHONY: test
 test: test_unit test_integration test_e2e
