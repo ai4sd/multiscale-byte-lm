@@ -23,7 +23,7 @@ all: format lint check_types test
 .PHONY: install_common_ci
 install_common_ci:
 	@echo "[CI] Installing common Python dependencies"
-	uv sync --inexact --frozen --no-cache --quiet
+	uv sync --inexact --frozen --quiet
 
 .PHONY: install_cpu
 install_cpu: .install_common .pre-commit
@@ -40,7 +40,7 @@ install_cuda: .install_common .pre-commit
 .PHONY: install_ci
 install_ci: install_common_ci	
 	@echo "[CI] Overriding/installing PyTorch (CPU)"
-	uv pip install --reinstall --no-cache --quiet \
+	uv pip install --reinstall --quiet \
 	"torch>=${TORCH_VERSION}"
 
 .PHONY: install_mamba
@@ -51,22 +51,22 @@ install_mamba:
 
 .PHONY: check_types
 check_types:
-	mypy src tests scripts
+	uv run mypy src tests scripts
 
 .PHONY: lint
 lint:
-	ruff check src tests scripts
+	uv run ruff check src tests scripts
 
 .PHONY: format
 format:
-	ruff format src tests scripts
+	uv run ruff format src tests scripts
 
 .PHONY: test
 test: test_unit test_integration test_e2e
 
 .PHONY: test_unit
 test_unit:
-	pytest tests/unit
+	uv run pytest tests/unit
 
 .PHONY: test_integration
 test_integration:
@@ -80,12 +80,12 @@ test_integration_install:
 
 .PHONY: test_integration_config
 test_integration_config:
-	pytest tests/integration/config
+	uv run pytest tests/integration/config
 
 E2E_RUN_TORCH = OMP_NUM_THREADS=1 \
-	torchrun --nproc_per_node=2 \
+	uv run torchrun --nproc_per_node=2 \
 	tests/e2e/trainer/run_trainer.py
-E2E_RUN_VALIDATE = python tests/e2e/trainer/validate.py
+E2E_RUN_VALIDATE = uv run tests/e2e/trainer/validate.py
 E2E_TEST_ROOT = tests/e2e/trainer
 
 .PHONY: test_e2e
