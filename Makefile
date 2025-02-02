@@ -6,10 +6,6 @@ CASUAL_CONV_VERSION = 1.4.0
 
 .DEFAULT_GOAL := all
 
-# when cuda is installed, uv will sync before any run command
-# and reinstall the cpu version - this env variable prevents that
-UV_NO_SYNC=1
-export UV_NO_SYNC
 
 .PHONY: all
 all: format lint check_types test
@@ -55,22 +51,22 @@ install_mamba:
 
 .PHONY: check_types
 check_types:
-	uv run mypy src tests scripts
+	mypy src tests scripts
 
 .PHONY: lint
 lint:
-	uv run ruff check src tests scripts
+	ruff check src tests scripts
 
 .PHONY: format
 format:
-	uv run ruff format src tests scripts
+	ruff format src tests scripts
 
 .PHONY: test
 test: test_unit test_integration test_e2e
 
 .PHONY: test_unit
 test_unit:
-	uv run pytest tests/unit
+	pytest tests/unit
 
 .PHONY: test_integration
 test_integration:
@@ -84,12 +80,12 @@ test_integration_install:
 
 .PHONY: test_integration_config
 test_integration_config:
-	uv run pytest tests/integration/config
+	pytest tests/integration/config
 
 E2E_RUN_TORCH = OMP_NUM_THREADS=1 \
-	uv run torchrun --nproc_per_node=2 \
+	torchrun --nproc_per_node=2 \
 	tests/e2e/trainer/run_trainer.py
-E2E_RUN_VALIDATE = uv run tests/e2e/trainer/validate.py
+E2E_RUN_VALIDATE = python tests/e2e/trainer/validate.py
 E2E_TEST_ROOT = tests/e2e/trainer
 
 .PHONY: test_e2e
