@@ -20,33 +20,47 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
 
-from typing import Iterable
+from typing import Any, Callable, ParamSpec, TypeVar
 
-from torch import nn
-
-ParamType = nn.Module | nn.ModuleList | nn.Parameter | nn.ParameterList
-
-
-def _count(modules: Iterable[ParamType]) -> int:
-    num_learnable = 0
-    for module in modules:
-        if isinstance(module, nn.Parameter):
-            num_learnable += module.numel()
-        else:
-            for param in module.parameters():
-                if param.requires_grad:
-                    num_learnable += param.numel()
-
-    return num_learnable
+P = ParamSpec("P")
+T = TypeVar("T")
 
 
-def count_params(
-    main_module: ParamType,
-    *submodules: tuple[str, Iterable[ParamType]],
-) -> tuple[int, dict[str, int]]:
-    module_map: dict[str, int] = {}
+def retry(
+    num_retries: int,
+    on_error: Callable[[Exception, int], Any] | None = None,
+):
+    """Retry a function `n` times. The function is called at maximum `n` times"""
+    assert num_retries >= 0, "num_retries must be non-negative"
 
-    for mod_name, module in submodules:
-        module_map[mod_name] = _count(module)
+    def wrapper(f: Callable[P, T]) -> Callable[P, T | None]:
+        def inner(*args: P.args, **kwargs: P.kwargs) -> T | None:
+            attempted_retries = 0
+            while attempted_retries <= num_retries:
+                try:
+                    return f(*args, **kwargs)
+                except Exception as err:
+                    if on_error:
+                        on_error(err, num_retries - attempted_retries)
+                    attempted_retries += 1
 
-    return _count([main_module]), module_map
+            return None
+
+        return inner
+
+    return wrapper
+
+
+def once(f: Callable[P, T]) -> Callable[P, T | None]:
+    """Run a function only once and return None afterwards"""
+    has_run = False
+
+    def inner(*args: P.args, **kwargs: P.kwargs) -> T | None:
+        nonlocal has_run
+        if has_run:
+            return None
+
+        has_run = True
+        return f(*args, **kwargs)
+
+    return inner

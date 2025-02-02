@@ -3,7 +3,7 @@ from typing import Literal
 import pytest
 from pytest_mock import MockerFixture
 
-from mblm.utils.retry import retry
+from mblm.utils.misc import once, retry
 
 
 class FailThenSuccess:
@@ -18,7 +18,7 @@ class FailThenSuccess:
         return True
 
 
-class TestTrainerUtils:
+class TestMisc:
     @pytest.mark.parametrize(
         "n_retries,n_inner_fails,expected_calls,expected_result",
         [
@@ -51,3 +51,11 @@ class TestTrainerUtils:
         assert result is expected_result
         assert try_func_spy.call_count == expected_calls
         assert on_error_stub.call_count == min(n_inner_fails, n_retries + 1)
+
+    def test_once(self):
+        @once
+        def func():
+            return True
+
+        assert func()
+        assert func() is None

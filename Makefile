@@ -6,6 +6,11 @@ CASUAL_CONV_VERSION = 1.4.0
 
 .DEFAULT_GOAL := all
 
+# when cuda is installed, uv will sync before any run command
+# and reinstall the cpu version - this env variable prevents that
+UV_NO_SYNC=1
+export UV_NO_SYNC
+
 .PHONY: all
 all: format lint check_types test
 
@@ -54,11 +59,11 @@ check_types:
 
 .PHONY: lint
 lint:
-	uv run ruff check src tests scripts
+	uv run --no-sync ruff check src tests scripts
 
 .PHONY: format
 format:
-	uv run ruff format src tests scripts
+	uv run --no-sync ruff format src tests scripts
 
 .PHONY: test
 test: test_unit test_integration test_e2e

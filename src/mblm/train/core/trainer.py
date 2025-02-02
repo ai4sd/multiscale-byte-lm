@@ -41,6 +41,7 @@ from tqdm import tqdm
 
 from mblm.data.datasets import DistributedDataset
 from mblm.data.types import ModelMode
+from mblm.model.utils import count_params
 from mblm.train.core.config import (
     CoreIoConfig,
     CSVLossEntry,
@@ -58,8 +59,7 @@ from mblm.utils.cuda import cuda_memory_snapshot, cuda_properties
 from mblm.utils.distributed import ElasticRunVars
 from mblm.utils.io import CSVWriter, StateDict, dump_yml, load_model_state, save_model_state
 from mblm.utils.logging import create_logger
-from mblm.utils.misc import count_params
-from mblm.utils.retry import retry
+from mblm.utils.misc import retry
 from mblm.utils.top_n import TopN
 
 TModel = TypeVar("TModel", bound=torch.nn.Module)
