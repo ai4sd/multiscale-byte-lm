@@ -22,7 +22,6 @@ SOFTWARE."""
 
 import logging
 import math
-import pprint
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -41,6 +40,7 @@ from tqdm import tqdm
 
 from mblm.data.datasets import DistributedDataset
 from mblm.data.types import ModelMode
+from mblm.model.utils import count_params
 from mblm.train.core.config import (
     CoreIoConfig,
     CSVLossEntry,
@@ -58,8 +58,7 @@ from mblm.utils.cuda import cuda_memory_snapshot, cuda_properties
 from mblm.utils.distributed import ElasticRunVars
 from mblm.utils.io import CSVWriter, StateDict, dump_yml, load_model_state, save_model_state
 from mblm.utils.logging import create_logger
-from mblm.utils.misc import count_params
-from mblm.utils.retry import retry
+from mblm.utils.misc import retry
 from mblm.utils.top_n import TopN
 
 TModel = TypeVar("TModel", bound=torch.nn.Module)
@@ -164,9 +163,9 @@ class CoreTrainer(ABC, Generic[TModel, TBatch, TModelParams, TTrainConfig, TIoCo
 
         if config.io.validate_amount < config.io.num_models_to_save:
             self._log.warning(
-                f"Validate amount ({ config.io.validate_amount}) \
-                is less than number of models to save ({ config.io.num_models_to_save}).\
-                Saving only { config.io.validate_amount} models"
+                f"Validate amount ({config.io.validate_amount}) \
+                is less than number of models to save ({config.io.num_models_to_save}).\
+                Saving only {config.io.validate_amount} models"
             )
 
         model = self.init_model().to(self._device)
@@ -217,8 +216,8 @@ class CoreTrainer(ABC, Generic[TModel, TBatch, TModelParams, TTrainConfig, TIoCo
         self._dump_output_config()
         self._log.info("Trainer initialized successfully")
         self._log.info(f"Model parameters: {main_model_params}, ({submodule_params})")
-        self._log.info(f"Configuration: {pprint.pformat((config), indent=4)}")
-        self._log.info(f"CUDA: {pprint.pformat(cuda_info)}")
+        self._log.info(f"Configuration: {config}")
+        self._log.info(f"CUDA: {cuda_info}")
 
     """ Abstract methods that must be implemented """
 
@@ -439,7 +438,7 @@ class CoreTrainer(ABC, Generic[TModel, TBatch, TModelParams, TTrainConfig, TIoCo
         for idx, (loss, model_state) in enumerate(self._top_n_models):
             did_overwrite, checkpoint_path = save_model_state(
                 self._output_dir,
-                f"{self.config.io.name_model}_top{idx+1}.pth",
+                f"{self.config.io.name_model}_top{idx + 1}.pth",
                 model=model_state,
                 loss=loss,
             )
@@ -509,7 +508,7 @@ class CoreTrainer(ABC, Generic[TModel, TBatch, TModelParams, TTrainConfig, TIoCo
             return
         num_written, num_overwritten, best_model_path = self._save_best_models()
         self._log.debug(
-            f"Saved {num_written} best model(s) " f"(overwrote {num_overwritten})",
+            f"Saved {num_written} best model(s) (overwrote {num_overwritten})",
         )
 
         # mutate running config in place, then save back

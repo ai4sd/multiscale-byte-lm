@@ -29,9 +29,9 @@ from typing import Sequence
 from tabulate import tabulate
 
 from mblm import MBLM
+from mblm.model.utils import count_params
 from mblm.train.mblm import TrainEntryConfig
 from mblm.utils.io import load_yml
-from mblm.utils.misc import count_params
 
 
 def resolve_configs(

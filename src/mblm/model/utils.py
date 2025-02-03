@@ -21,9 +21,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
 
 import codecs
-from typing import TextIO
+from typing import Iterable, TextIO
 
 import torch
+from torch import nn
 
 
 def log(t: torch.Tensor, eps: float = 1e-20):
@@ -46,6 +47,34 @@ def top_k(logits: torch.Tensor, thres: float = 0.5):
     probs = torch.full_like(logits, float("-inf"))
     probs.scatter_(1, ind, val)
     return probs
+
+
+ParamType = nn.Module | nn.ModuleList | nn.Parameter | nn.ParameterList
+
+
+def _count(modules: Iterable[ParamType]) -> int:
+    num_learnable = 0
+    for module in modules:
+        if isinstance(module, nn.Parameter):
+            num_learnable += module.numel()
+        else:
+            for param in module.parameters():
+                if param.requires_grad:
+                    num_learnable += param.numel()
+
+    return num_learnable
+
+
+def count_params(
+    main_module: ParamType,
+    *submodules: tuple[str, Iterable[ParamType]],
+) -> tuple[int, dict[str, int]]:
+    module_map: dict[str, int] = {}
+
+    for mod_name, module in submodules:
+        module_map[mod_name] = _count(module)
+
+    return _count([main_module]), module_map
 
 
 class RoPE(torch.nn.Module):

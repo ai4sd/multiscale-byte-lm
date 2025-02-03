@@ -1,18 +1,19 @@
-"""
-
-From the project root, run:
-make test_e2e
-"""
-
 import math
 import os
+import warnings
 from pathlib import Path
+
+warnings.filterwarnings("ignore", module="mblm.model.mamba_shim", category=UserWarning)
+
+# https://github.com/pytorch/pytorch/issues/103444
+warnings.filterwarnings("ignore", module="torch.optim.lr_scheduler", category=UserWarning)
 
 import torch
 from torch.optim import Adam, Optimizer  # type: ignore
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, LRScheduler, SequentialLR
 
 from mblm.data.datasets import DistributedDataset
+from mblm.model.utils import count_params
 from mblm.train.core.config import (
     CoreIoConfig,
     CoreModelParams,
@@ -23,7 +24,6 @@ from mblm.train.core.trainer import CoreTrainer, CoreTrainerOptions
 from mblm.utils.distributed import process_group
 from mblm.utils.io import load_yml
 from mblm.utils.logging import create_logger
-from mblm.utils.misc import count_params
 from mblm.utils.seed import seed_everything
 
 # TODO: Python 3.12, assert_type

@@ -62,7 +62,7 @@ _gb_conv_factor = 1024**3
 
 
 def cuda_memory_snapshot(device: Device | None, dec_prec: int = 3) -> CudaMemorySnapshot:
-    if not torch.cuda.is_available():
+    if not torch.cuda.is_available() or device == "cpu":
         return CudaMemorySnapshot(
             allocated=0.0,
             allocated_max=0.0,

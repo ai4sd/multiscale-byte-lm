@@ -36,6 +36,7 @@ from mblm.data.dataset.pg19 import PG19
 from mblm.data.datasets import DistributedDataset
 from mblm.data.types import BatchWithLossMask, ModelMode
 from mblm.model.embeddings import MBLM_TOKEN_EMB_MIGRATION
+from mblm.model.utils import count_params
 from mblm.train.core.config import (
     CoreIoConfig,
     CoreModelParams,
@@ -46,7 +47,6 @@ from mblm.train.core.config import (
 from mblm.train.core.trainer import CoreTrainer
 from mblm.utils.distributed import process_group
 from mblm.utils.logging import create_logger, shutdown_log_handlers
-from mblm.utils.misc import count_params
 
 
 class TrainMBLMParams(MBLMModelConfig, CoreModelParams):

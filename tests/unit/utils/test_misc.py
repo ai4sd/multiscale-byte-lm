@@ -3,7 +3,7 @@ from typing import Literal
 import pytest
 from pytest_mock import MockerFixture
 
-from mblm.utils.retry import retry
+from mblm.utils.misc import retry
 
 
 class FailThenSuccess:
@@ -18,7 +18,7 @@ class FailThenSuccess:
         return True
 
 
-class TestTrainerUtils:
+class TestMisc:
     @pytest.mark.parametrize(
         "n_retries,n_inner_fails,expected_calls,expected_result",
         [
