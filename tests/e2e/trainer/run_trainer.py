@@ -1,6 +1,12 @@
 import math
 import os
+import warnings
 from pathlib import Path
+
+warnings.filterwarnings("ignore", module="mblm.model.mamba_shim", category=UserWarning)
+
+# https://github.com/pytorch/pytorch/issues/103444
+warnings.filterwarnings("ignore", module="torch.optim.lr_scheduler", category=UserWarning)
 
 import torch
 from torch.optim import Adam, Optimizer  # type: ignore
