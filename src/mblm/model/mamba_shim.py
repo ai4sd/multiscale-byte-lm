@@ -33,13 +33,12 @@ provides a shim to enable development across platforms.
 
 """
 
+import os
 import warnings
 from functools import partial
 from typing import cast
 
 import torch
-
-from mblm.utils.misc import once
 
 Mamba1 = None
 Mamba1Config = None
@@ -182,14 +181,12 @@ except ImportError as err:
     if sys.platform.startswith("linux"):
         reason_failed = err.msg
 
-    @once
-    def warn_mamba_import():
+    skip_warning = "PYTEST_CURRENT_TEST" in os.environ
+
+    if not skip_warning:
         warnings.warn(
             f"Failed to import Mamba2, falling back to Mamba1 (PyTorch version). Reason: {reason_failed}",
-            category=ImportWarning,
         )
-
-    warn_mamba_import()
 
 
 __all__ = ["Mamba1", "Mamba1Config", "Mamba2Mixer"]

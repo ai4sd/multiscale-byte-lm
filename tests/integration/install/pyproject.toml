@@ -19,6 +19,7 @@ dev = ["pytest>=8.3.3"]
 [tool.pytest.ini_options]
 testpaths = ["."]
 addopts = ["--import-mode=importlib"]
+filterwarnings = ["ignore::UserWarning:mblm.model.mamba_shim"]
 
 [tool.ruff]
 line-length = 80

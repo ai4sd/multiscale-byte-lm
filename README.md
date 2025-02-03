@@ -24,10 +24,10 @@ uv add mblm
 
 ### Using Torch and Mamba
 
-You will need to **install a recent PyTorch version manually**. We use `>=2.4.1`. It is best to do this after installing the package since some sub-dependencies might install their own (CPU) PyTorch version.
+You will need to **install a recent PyTorch version manually**. We use `>=2.6.0`. It is best to do this after installing the package since some sub-dependencies might install their own (CPU) PyTorch version.
 
 ```
-pip install 'torch>=2.4.1' --index-url https://download.pytorch.org/whl/cu124
+pip install 'torch>=2.6.0' --index-url https://download.pytorch.org/whl/cu124
 ```
 
 Finally, in order to use the efficient [Mamba-SSM](https://github.com/state-spaces/mamba), follow their instructions on the homepage. You'll need Linux and a GPU available during installation.

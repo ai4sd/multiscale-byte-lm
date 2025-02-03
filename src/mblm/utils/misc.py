@@ -49,18 +49,3 @@ def retry(
         return inner
 
     return wrapper
-
-
-def once(f: Callable[P, T]) -> Callable[P, T | None]:
-    """Run a function only once and return None afterwards"""
-    has_run = False
-
-    def inner(*args: P.args, **kwargs: P.kwargs) -> T | None:
-        nonlocal has_run
-        if has_run:
-            return None
-
-        has_run = True
-        return f(*args, **kwargs)
-
-    return inner

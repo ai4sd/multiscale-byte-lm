@@ -1,4 +1,4 @@
-TORCH_VERSION = 2.4.1
+TORCH_VERSION = 2.6.0
 CUDA_INDEX_URL = https://download.pytorch.org/whl/cu124
 
 MAMBA_VERSION = 2.2.2
@@ -18,7 +18,7 @@ all: format lint check_types test
 .PHONY: .install_common	
 .install_common:
 	@echo "Installing common Python dependencies"
-	uv sync --all-extras
+	uv sync
 
 .PHONY: install_common_ci
 install_common_ci:
