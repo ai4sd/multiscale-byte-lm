@@ -1,9 +1,3 @@
-"""
-
-From the project root, run:
-make test_e2e
-"""
-
 import math
 import os
 from pathlib import Path

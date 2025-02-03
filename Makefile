@@ -83,7 +83,7 @@ test_integration_config:
 	uv run pytest tests/integration/config
 
 E2E_RUN_TORCH = OMP_NUM_THREADS=1 \
-	uv run torchrun --nproc_per_node=2 \
+	uv run torchrun --nproc_per_node=4 \
 	tests/e2e/trainer/run_trainer.py
 E2E_RUN_VALIDATE = uv run tests/e2e/trainer/validate.py
 E2E_TEST_ROOT = tests/e2e/trainer
