@@ -30,10 +30,22 @@ You will need to **install a recent PyTorch version manually**. We use `>=2.6.0`
 pip install 'torch>=2.6.0' --index-url https://download.pytorch.org/whl/cu124
 ```
 
+For `uv`:
+
+```
+uv pip install 'torch>=2.6.0' --index-url https://download.pytorch.org/whl/cu124
+```
+
 Finally, in order to use the efficient [Mamba-SSM](https://github.com/state-spaces/mamba), follow their instructions on the homepage. You'll need Linux and a GPU available during installation.
 
 ```
 pip install mamba-ssm>=2.2.2 causal-conv1d>=1.4.0 --no-build-isolation
+```
+
+For `uv`:
+
+```
+uv pip install mamba-ssm>=2.2.2 causal-conv1d>=1.4.0 --no-build-isolation
 ```
 
 If `mamba-ssm` is not available, we fall back to using `mambapy`, which is written in pure PyTorch.
