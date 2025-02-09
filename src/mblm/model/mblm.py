@@ -34,7 +34,8 @@ from tqdm import tqdm
 
 from mblm.model.block import StageBlock
 from mblm.model.config import MBLMModelConfig, MBLMReturnType
-from mblm.model.utils import ByteToUtf8Streamer, RoPE, gumbel_sample, top_k
+from mblm.model.utils import RoPE, gumbel_sample, top_k
+from mblm.utils.stream import ByteStreamer
 
 """
 Wording:
@@ -498,7 +499,7 @@ class MBLM(nn.Module):
     def generate(
         self,
         prime: torch.Tensor | None = None,
-        stream: ByteToUtf8Streamer | None = None,
+        stream: ByteStreamer | None = None,
         num_tokens_to_generate: int | None = None,
         end_of_gen_token_id: int = -1,
         temperature: float = 1.0,
@@ -550,4 +551,6 @@ class MBLM(nn.Module):
 
             if newest_token == end_of_gen_token_id:
                 break
+        if stream is not None:
+            stream.flush()
         return sequence.squeeze()

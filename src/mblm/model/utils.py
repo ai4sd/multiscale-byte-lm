@@ -20,8 +20,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
 
-import codecs
-from typing import Iterable, TextIO
+
+from typing import Iterable
 
 import torch
 from torch import nn
@@ -197,25 +197,3 @@ class RoPE(torch.nn.Module):
         # tensor has shape [b, s, n_h, h_d]
         x_out = x_out.flatten(3)
         return x_out.type_as(x)
-
-
-class ByteToUtf8Streamer:
-    def __init__(self, stream: TextIO):
-        self.stream = stream
-        self.decoder = codecs.getincrementaldecoder("utf-8")()
-
-    def write(self, single_byte: int):
-        try:
-            as_byte = single_byte.to_bytes(1, byteorder="big")
-            decoded_str = self.decoder.decode(as_byte)
-
-            self.stream.write(decoded_str)
-            self.stream.flush()
-        except UnicodeDecodeError:
-            pass
-
-    def flush_remaining(self):
-        remaining = self.decoder.decode(b"", final=True)
-        if remaining:
-            self.stream.write(remaining)
-            self.stream.flush()
