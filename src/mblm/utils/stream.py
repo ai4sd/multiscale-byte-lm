@@ -111,11 +111,7 @@ class ByteStreamer:
             return
 
     def flush(self):
-        if self._utf8_decoder is None:
+        if not self._enable_decode_utf8:
             return
-        try:
-            remaining = self._utf8_decoder.decode(b"", final=True)
-            if remaining:
-                self._stream.write(remaining)
-        except UnicodeDecodeError:
-            pass
+        if remaining := self._utf8_decoder.decode(b"", final=True):
+            self._stream.write(remaining)
