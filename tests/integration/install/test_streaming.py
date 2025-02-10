@@ -18,8 +18,7 @@ class MBLM:
 
     def generate(self, stream: ByteStreamer):
         for b in origin_text_str.encode("utf8"):
-            if stream:
-                stream.write(b)
+            stream.write(b)
 
 
 def create_mblm(*args, **kwargs):
