@@ -449,7 +449,7 @@ For simplicity, let's assume we have some `root_dir` and a function `create_mblm
 
 #### Streaming to a file
 
-We can **directly stream the response to a file** - no need to specify the encoding - all we need to do is open a file in binary mode. In this example, the output corresponds to UTF-8.
+We can **stream the response directly to a file** - no need to specify the encoding - all we need to do is open a file in binary mode. In this example, the output corresponds to UTF-8.
 
 ```py
 from pathlib import Path
@@ -473,7 +473,7 @@ with Path(file_path).open("r", encoding="utf8") as file:
 
 #### Streaming to stdout
 
-For developing and interactive sessions, you can **stream the response directly to your terminal**. We can either decode the bytes from UTF-8 on the fly or stream the raw integer bytes to the terminal.
+For developing and interactive sessions, you can **stream the response directly to your terminal**. We can either decode the bytes from UTF-8 on the fly or stream the raw integer bytes to the terminal when the bytes represent something other than text.
 
 ```py
 import sys
@@ -494,7 +494,7 @@ with ByteStreamer(stream=sys.stdout) as streamer:
     mblm.generate(streamer)
 
 # streams the bytes as integers to the terminal:
-# 240 159 145 ...0 159 164 150
+# 240 159 145 ... 159 164 150
 ```
 
 ## Local development setup
