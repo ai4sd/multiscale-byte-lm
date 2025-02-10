@@ -497,6 +497,8 @@ with ByteStreamer(stream=sys.stdout) as streamer:
 # 240 159 145 ... 159 164 150
 ```
 
+Our approach of decoding from UTF-8 uses the [`replace` strategy](https://docs.python.org/3/library/codecs.html#error-handlers) for dealing with malformed data, which enables continuous decoding even for partially corrupted sequences. Whenever `decode_utf8` is `False`, raw bytes are streamed and you'll need to deal with corrupted UTF-8 sequences on your own.
+
 ## Local development setup
 
 We use `uv` for packaging and dependency management. Before proceeding, install a recent version (>= `0.5`) via the instructions on [the homepage](https://docs.astral.sh/uv/getting-started/installation/).
