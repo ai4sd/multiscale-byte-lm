@@ -27,16 +27,49 @@ from typing import IO, BinaryIO, Literal, TextIO, overload
 
 
 class ByteStreamer:
+    """
+    The ByteStreamer allows writing bytes to a given stream with support
+    for optional UTF-8 decoding.
+
+    Arguments:
+        `stream` (IO): Any file-like object with a `.write()` method
+        `decode_utf8` (bool): When `stream` expects a text stream (e.g., TextIO),
+            incrementally decode from UTF-8 bytes. Invalid characters will be
+            replaced with the Unicode replacement character (U+FFFD). If the stream
+            is binary, this option has no effect and bytes are written directly as raw data.
+
+    If the stream expects text and `decode_utf8` is `False`, writes bytes as space-
+    separated integer strings.
+
+    It is recommended to use this class as a context manager. If used standalone, its
+    `.flush()` method needs to be called after the last write.
+
+    Example:
+        ```
+        # Using ByteStreamer with a text stream and UTF-8 decoding enabled
+        with open("output.txt", "w", encoding="utf-8") as file:
+            with ByteStreamer(file, decode_utf8=True) as streamer:
+                streamer.write(65)  # Writes 'A' as UTF-8
+
+
+        ## Using ByteStreamer with a binary stream
+        with open("output.bin", "wb") as file:
+            with ByteStreamer(file, decode_utf8=False) as streamer:
+                streamer.write(65)  # Writes raw byte 0x41 (ASCII 'A')
+        ```
+    """
+
     @overload
     def __init__(self, stream: TextIO, decode_utf8: bool = ...) -> None: ...
     @overload
     def __init__(self, stream: BinaryIO, decode_utf8: Literal[False] = ...) -> None: ...
-    def __init__(self, stream: TextIO | BinaryIO, decode_utf8: bool = False) -> None:
+    def __init__(self, stream: IO, decode_utf8: bool = False) -> None:
         self._stream: IO = stream
         self._stream_started = False
         self._stream_raw = isinstance(stream, io.BufferedIOBase)
         self._enable_decode_utf8 = decode_utf8
-        self._utf8_decoder = codecs.getincrementaldecoder("utf-8")()
+        # replace invalid bytes with replacement character u+fffd
+        self._utf8_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
 
     def __enter__(self):
         return self
@@ -75,7 +108,7 @@ class ByteStreamer:
             self._stream.write(decoded_byte)
 
         except UnicodeDecodeError:
-            self._utf8_decoder.reset()
+            return
 
     def flush(self):
         if self._utf8_decoder is None:

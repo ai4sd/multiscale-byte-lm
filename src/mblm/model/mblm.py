@@ -511,10 +511,10 @@ class MBLM(nn.Module):
 
         Args:
             prime: The prompt as a 1D tensor of type torch.long. Batches are
-                not supported for now
+                not supported for now.
             stream: Instead of generating and then returning the sequene, stream
-                the intermediate results. Only possible when the bytes represent
-                UTF-8 encoded text
+                the intermediate results to a writeable stream. Supports
+                incremental UTF-8 decoding.
             num_tokens_to_generate: If set, ignore the context window and
                 generate an exact amount of tokens. If `None`, generate up to
                 the maximum possible sequence length.
