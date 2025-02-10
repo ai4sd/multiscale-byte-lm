@@ -443,7 +443,7 @@ f0 9f 91 89 f0 9f 8f bd 20 62 79 74 65 73 20 67 65 6e 65 72 61 74 65 64 20 62 79
 240 159 145 137 240 159 143 189 32 98 121 116 101 115 32 103 101 110 101 114 97 116 101 100 32 98 121 32 97 32 240 159 164 150
 ```
 
-Internally, these integers are what the model generates. However, maybe you have trained to output a different modality such as a [PNG file](http://www.libpng.org/pub/png/spec/1.2/PNG-Structure.html) or an [MP4 video](https://www.iso.org/obp/ui/en/#iso:std:iso-iec:14496:-14:ed-3:v1:en) - the possibilities are endless.
+Internally, these integers are what the model generates. However, maybe you have trained to output a different modality such as a PNG file or an MP4 video - the possibilities are endless.
 
 For simplicity, let's assume we have some `root_dir` and a function `create_mblm` to create an MBLM module.
 
