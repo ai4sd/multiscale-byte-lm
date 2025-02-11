@@ -34,7 +34,8 @@ from tqdm import tqdm
 
 from mblm.model.block import StageBlock
 from mblm.model.config import MBLMModelConfig, MBLMReturnType
-from mblm.model.utils import ByteToUtf8Streamer, RoPE, gumbel_sample, top_k
+from mblm.model.utils import RoPE, gumbel_sample, top_k
+from mblm.utils.stream import ByteStreamer
 
 """
 Wording:
@@ -498,7 +499,7 @@ class MBLM(nn.Module):
     def generate(
         self,
         prime: torch.Tensor | None = None,
-        stream: ByteToUtf8Streamer | None = None,
+        stream: ByteStreamer | None = None,
         num_tokens_to_generate: int | None = None,
         end_of_gen_token_id: int = -1,
         temperature: float = 1.0,
@@ -510,10 +511,10 @@ class MBLM(nn.Module):
 
         Args:
             prime: The prompt as a 1D tensor of type torch.long. Batches are
-                not supported for now
+                not supported for now.
             stream: Instead of generating and then returning the sequene, stream
-                the intermediate results. Only possible when the bytes represent
-                UTF-8 encoded text
+                the intermediate results to a writeable stream. Supports
+                incremental UTF-8 decoding.
             num_tokens_to_generate: If set, ignore the context window and
                 generate an exact amount of tokens. If `None`, generate up to
                 the maximum possible sequence length.
@@ -550,4 +551,6 @@ class MBLM(nn.Module):
 
             if newest_token == end_of_gen_token_id:
                 break
+        if stream is not None:
+            stream.flush()
         return sequence.squeeze()
