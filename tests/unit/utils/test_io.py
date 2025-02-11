@@ -1,3 +1,5 @@
+# pyright: reportIndexIssue=false, reportArgumentType=false
+
 import csv
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -147,7 +149,7 @@ class TestModelCheckpointing:
         assert tgt_logits[:, :src_emb_size].equal(src_logits)
 
     @torch.no_grad()
-    def test_load_map_state_mmb(self):
+    def test_load_map_state_mbml(self):
         def create_model(num_tokens: int):
             return MBLM(
                 MBLMModelConfig(

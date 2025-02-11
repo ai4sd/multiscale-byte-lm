@@ -50,7 +50,7 @@ class TestConfigToModel:
         return None
 
     @pytest.mark.parametrize("config_files", CONFIG_FILES)
-    def test_config_to_mmb_transformer(self, config_files: Iterable[Path]):
+    def test_config_to_mbml_transformer(self, config_files: Iterable[Path]):
         for config_file in config_files:
             config = self.ensure_config_is_valid(config_file)
             self.ensure_dataset_args_are_valid(config)

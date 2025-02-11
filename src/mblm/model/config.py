@@ -68,7 +68,7 @@ class MBLMModelConfig(BaseModel):
     seq_lens: Sequence[int]
     train_checkpoint_chunks: list[int] | None
 
-    block: StageBlock | list[StageBlock]
+    block: StageBlock | Sequence[StageBlock]
 
     @field_validator("block", mode="before")
     @classmethod
@@ -103,13 +103,13 @@ class MBLMModelConfig(BaseModel):
 
     @field_serializer("block")
     def serialize_block(
-        self, block: StageBlock | list[StageBlock], info: SerializationInfo
+        self, block: StageBlock | Sequence[StageBlock], info: SerializationInfo
     ) -> dict | list[dict]:
-        if not isinstance(block, list):
+        if not isinstance(block, Sequence):
             return block.model_dump(mode=info.mode)
         return [b.model_dump(mode=info.mode) for b in block]
 
-    def stage_blocks(self) -> list[StageBlock]:
-        if isinstance(self.block, list):
+    def stage_blocks(self) -> Sequence[StageBlock]:
+        if isinstance(self.block, Sequence):
             return self.block
         return list(repeat(self.block, len(self.hidden_dims)))
