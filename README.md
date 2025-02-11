@@ -1,5 +1,8 @@
 # Multiscale Byte Language Model
 
+![PyPI - Version](https://img.shields.io/pypi/v/mblm) ![GitHub tag check runs](https://img.shields.io/github/check-runs/ai4sd/mblm/main)
+![GitHub License](https://img.shields.io/github/license/ai4sd/mblm)
+
 The Multiscale Byte Language Model is a model-agnostic, hierarchical architecture for causal byte-level language modeling that scales to million-length sequences.
 
 <p align="center">
