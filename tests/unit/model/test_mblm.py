@@ -6,6 +6,7 @@ import pytest
 import torch
 
 from mblm import MBLM, MBLMModelConfig, MBLMReturnType, TransformerBlock
+from mblm.utils.seed import seed_everything
 from mblm.utils.stream import ByteStreamer
 
 
@@ -68,6 +69,8 @@ class TestMBLM:
 
     def test_generate(self):
         ctx_windows = [12, 4]
+
+        seed_everything(8)
         mblm = MBLM(
             MBLMModelConfig(
                 num_tokens=self.num_tokens,
@@ -102,6 +105,6 @@ class TestMBLM:
 
         buff = io.BytesIO()
         with ByteStreamer(buff) as stream:
-            generate(stream=stream)
+            generate(stream=stream, filter_thres=1)
 
         assert len(buff.getbuffer()) == total_generation_len

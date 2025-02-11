@@ -22,7 +22,7 @@ SOFTWARE."""
 
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, TypeVar
 
 import torch
 from pydantic import BaseModel, Field
@@ -55,6 +55,9 @@ class StageBlock(ABC, BaseModel):
     """
 
 
+TStageBlock = TypeVar("TStageBlock", bound=StageBlock)
+
+
 class StageBlockRegistry(set[type[StageBlock]]):
     """
     Stage block registry that allows (custom) stage blocks to be registered for
@@ -64,12 +67,22 @@ class StageBlockRegistry(set[type[StageBlock]]):
     implementation.
     """
 
-    def register(self, stage_block_klass: type[StageBlock]) -> None:
+    def register(self) -> Callable[[type[TStageBlock]], type[TStageBlock]]:
         """
-        Register a stage block class so it can be validated from a YAML
+        Decorator to register a stage block class so it can be validated from a YAML
         configuration file.
+
+        Usage:
+            @block_registry.register()
+            class MyBlock(StageBlock):
+                pass
         """
-        return self.add(stage_block_klass)
+
+        def decorator(stage_block_klass: type[TStageBlock]) -> type[TStageBlock]:
+            self.add(stage_block_klass)
+            return stage_block_klass
+
+        return decorator
 
     def try_parse(
         self,

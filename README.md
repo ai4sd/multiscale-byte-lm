@@ -228,11 +228,13 @@ class MyLSTM(torch.nn.Module):
         return out
 
 # Add a block config and inherit from StageBlock
+@block_registry.register()
 class LSTMBlockConfig(StageBlock):
     block_type: str = "lstm"
 
     # Add whatever is needed
     dropout: float
+    my_property: int
 
     def to_model(self, model_dim: int, num_layers: int) -> torch.nn.Module:
         return MyLSTM(
@@ -254,6 +256,7 @@ pad_token_id: 256
 train_checkpoint_chunks: null
 block:
     - dropout: 0.1
+      my_property: 1
       pos_emb_type: null
     - attn_head_dims: 64
       attn_num_heads: 16
@@ -292,7 +295,8 @@ from mblm.train.mblm import (
     train_mblm,
 )
 
-
+# Register dataset with a unique ID
+@dataset_registry.register("mydataset")
 class MyDataset(DistributedDataset[BatchWithLossMask]):
     def __init__(
         self,
@@ -348,9 +352,6 @@ class MyDataset(DistributedDataset[BatchWithLossMask]):
         """
         return True
 
-
-# Register dataset with a unique ID
-dataset_registry.register("mydataset", MyDataset)
 
 config = TrainEntryConfig(
     io=TrainMBLMIoConfig(

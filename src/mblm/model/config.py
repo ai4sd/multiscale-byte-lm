@@ -37,8 +37,8 @@ from mblm.model.mamba import MambaBlock
 from mblm.model.transformer import TransformerBlock
 
 block_registry = StageBlockRegistry()
-block_registry.register(TransformerBlock)
-block_registry.register(MambaBlock)
+block_registry.register()(TransformerBlock)
+block_registry.register()(MambaBlock)
 
 
 class MBLMReturnType(str, Enum):

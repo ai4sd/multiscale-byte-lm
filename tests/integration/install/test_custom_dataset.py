@@ -1,8 +1,6 @@
 # Filename: train_my_mblm.py
 
 import torch
-from typing_extensions import Unpack
-
 from mblm import MambaBlock, TransformerBlock
 from mblm.data.datasets import DistributedDataset, DistributedDatasetConfig
 from mblm.data.types import BatchWithLossMask, ModelMode
@@ -14,8 +12,11 @@ from mblm.train.mblm import (
     dataset_registry,
     train_mblm,
 )
+from typing_extensions import Unpack
 
 
+# Register dataset with a unique ID
+@dataset_registry.register("mydataset")
 class MyDataset(DistributedDataset[BatchWithLossMask]):
     def __init__(
         self,
@@ -71,9 +72,6 @@ class MyDataset(DistributedDataset[BatchWithLossMask]):
         """
         return True
 
-
-# Register dataset with a unique ID
-dataset_registry.register("mydataset", MyDataset)
 
 config = TrainEntryConfig(
     io=TrainMBLMIoConfig(

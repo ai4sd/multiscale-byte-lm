@@ -5,7 +5,6 @@ seed_everything(8)
 
 def test_from_config():
     import torch
-
     from mblm import MBLM, MBLMModelConfig, MBLMReturnType, TransformerBlock
     from mblm.model.block import StageBlock
 
@@ -69,7 +68,6 @@ def test_from_config():
 def test_from_yaml():
     import torch
     import yaml
-
     from mblm import MBLM, MBLMModelConfig, MBLMReturnType
     from mblm.model.block import StageBlock
     from mblm.model.config import block_registry  # Add this!
@@ -86,11 +84,13 @@ def test_from_yaml():
             return out
 
     # Add a block config and inherit from StageBlock
+    @block_registry.register()
     class LSTMBlockConfig(StageBlock):
         block_type: str = "lstm"
 
         # Add whatever is needed
         dropout: float
+        my_property: int
 
         def to_model(self, model_dim: int, num_layers: int) -> torch.nn.Module:
             return MyLSTM(
@@ -112,6 +112,7 @@ def test_from_yaml():
     train_checkpoint_chunks: null
     block:
         - dropout: 0.1
+          my_property: 1
           pos_emb_type: null
         - attn_head_dims: 64
           attn_num_heads: 16
@@ -119,8 +120,6 @@ def test_from_yaml():
           use_flash_attn: true
           pos_emb_type: fixed
     """
-
-    block_registry.register(LSTMBlockConfig)  # Add this!
 
     parsed_config = yaml.safe_load(yml_model_config)
     mblm = MBLM(MBLMModelConfig.model_validate(parsed_config))
