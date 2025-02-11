@@ -37,6 +37,8 @@ class ByteStreamer:
             incrementally decode from UTF-8 bytes. Invalid characters will be
             replaced with the Unicode replacement character (U+FFFD). If the stream
             is binary, this option has no effect and bytes are written directly as raw data.
+        `ignore_overflowing` (bool): If there is a chance your source writes invalid bytes
+            that are larger than 0xFF (256), ignore these. This is enabled by default.
 
     If the stream expects text and `decode_utf8` is `False`, writes bytes as space-
     separated integer strings.
@@ -60,16 +62,23 @@ class ByteStreamer:
     """
 
     @overload
-    def __init__(self, stream: TextIO, decode_utf8: bool = ...) -> None: ...
+    def __init__(
+        self, stream: TextIO, decode_utf8: bool = ..., ignore_overflowing: bool = ...
+    ) -> None: ...
     @overload
-    def __init__(self, stream: BinaryIO, decode_utf8: Literal[False] = ...) -> None: ...
-    def __init__(self, stream: IO, decode_utf8: bool = False) -> None:
+    def __init__(
+        self, stream: BinaryIO, decode_utf8: Literal[False] = ..., ignore_overflowing: bool = ...
+    ) -> None: ...
+    def __init__(
+        self, stream: IO, decode_utf8: bool = False, ignore_overflowing: bool = True
+    ) -> None:
         self._stream: IO = stream
-        self._stream_started = False
-        self._stream_raw = isinstance(stream, io.BufferedIOBase)
         self._enable_decode_utf8 = decode_utf8
+        self.ignore_overflowing = ignore_overflowing
+        self._stream_raw = isinstance(stream, io.BufferedIOBase)
         # replace invalid bytes with replacement character u+fffd
         self._utf8_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        self._stream_started = False
 
     def __enter__(self):
         return self
@@ -84,6 +93,9 @@ class ByteStreamer:
         return False  # don't suppress any exceptions
 
     def write(self, int_byte: int) -> None:
+        # only relevant when potentially invalid int bytes are fed
+        if int_byte > 255 and self.ignore_overflowing:
+            return
         if self._stream_raw:
             return self._write_as_byte(int_byte)
         if self._enable_decode_utf8:

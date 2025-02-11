@@ -73,8 +73,7 @@ class TestMBLM:
                 num_tokens=self.num_tokens,
                 hidden_dims=[256, 256],
                 seq_lens=ctx_windows,
-                # for testing, make sure we don't generate byte literals > 255
-                pad_token_id=0,
+                pad_token_id=256,
                 num_layers=[1, 1],
                 train_checkpoint_chunks=None,
                 block=[

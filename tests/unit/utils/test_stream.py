@@ -29,6 +29,21 @@ class TestByteStream:
 
         assert buffer.getvalue() == UTF8_TEXT
 
+    def test_overflow(self):
+        """Test that overflows are gracefully ignored"""
+        buffer = io.BytesIO()
+
+        with ByteStreamer(buffer, ignore_overflowing=False) as streamer:
+            streamer.write(255)
+            with pytest.raises(OverflowError):
+                streamer.write(256)
+        try:
+            with ByteStreamer(buffer) as streamer:
+                for byte in (255, 256):
+                    streamer.write(byte)
+        except OverflowError:
+            pytest.fail("Overflow not handled")
+
     def test_utf8_corrupted_flush(self):
         """Ensure the incremental decoder is called with final=True"""
         # emoji missing the last byte
