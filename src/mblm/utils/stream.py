@@ -1,6 +1,6 @@
 __copyright__ = """MIT License
 
-Copyright (c) 2024 - IBM Research
+Copyright (c) 2025 - IBM Research
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
