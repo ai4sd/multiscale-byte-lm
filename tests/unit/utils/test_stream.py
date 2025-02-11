@@ -10,7 +10,7 @@ UTF8_TEXT = "こんにちは, just testing a UTF-8 stream🥳!"
 
 
 class TestByteStream:
-    def test_utf8_no_ctx_manager(self):
+    def test_utf8(self):
         """Test decoding valid UTF-8 bytes"""
         buffer = io.StringIO()
         streamer = ByteStreamer(buffer, decode_utf8=True)
@@ -21,10 +21,8 @@ class TestByteStream:
 
         assert buffer.getvalue() == UTF8_TEXT
 
-    def test_utf8(self):
-        """Test decoding valid UTF-8 bytes"""
+        # ctx manager usage
         buffer = io.StringIO()
-
         with ByteStreamer(buffer, decode_utf8=True) as streamer:
             for byte in UTF8_TEXT.encode(_ENCODING):
                 streamer.write(byte)
