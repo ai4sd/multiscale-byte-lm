@@ -217,10 +217,10 @@ import yaml
 
 from mblm import MBLM, MBLMModelConfig, MBLMReturnType
 from mblm.model.block import StageBlock
-from mblm.model.config import block_registry  # Add this!
+from mblm.model.config import block_registry  # Import this!
 
 # Define any custom model
-class MyLSTM(torch.nn.Module):
+class LSTM(torch.nn.Module):
     def __init__(self, lstm: torch.nn.LSTM):
         super().__init__()
         self.lstm = lstm
@@ -232,7 +232,7 @@ class MyLSTM(torch.nn.Module):
 
 # Add a block config and inherit from StageBlock
 @block_registry.register()
-class LSTMBlockConfig(StageBlock):
+class LSTMBlock(StageBlock):
     block_type: str = "lstm"
 
     # Add whatever is needed
@@ -240,7 +240,7 @@ class LSTMBlockConfig(StageBlock):
     my_property: int
 
     def to_model(self, model_dim: int, num_layers: int) -> torch.nn.Module:
-        return MyLSTM(
+        return LSTM(
             torch.nn.LSTM(
                 input_size=model_dim,
                 hidden_size=model_dim,
@@ -267,8 +267,6 @@ block:
       use_flash_attn: true
       pos_emb_type: fixed
 """
-
-block_registry.register(LSTMBlockConfig)  # Add this!
 
 parsed_config = yaml.safe_load(yml_model_config)
 mblm = MBLM(MBLMModelConfig.model_validate(parsed_config))

@@ -5,6 +5,7 @@ seed_everything(8)
 
 def test_from_config():
     import torch
+
     from mblm import MBLM, MBLMModelConfig, MBLMReturnType, TransformerBlock
     from mblm.model.block import StageBlock
 
@@ -68,12 +69,13 @@ def test_from_config():
 def test_from_yaml():
     import torch
     import yaml
+
     from mblm import MBLM, MBLMModelConfig, MBLMReturnType
     from mblm.model.block import StageBlock
-    from mblm.model.config import block_registry  # Add this!
+    from mblm.model.config import block_registry  # Import this!
 
     # Define any custom model
-    class MyLSTM(torch.nn.Module):
+    class LSTM(torch.nn.Module):
         def __init__(self, lstm: torch.nn.LSTM):
             super().__init__()
             self.lstm = lstm
@@ -85,7 +87,7 @@ def test_from_yaml():
 
     # Add a block config and inherit from StageBlock
     @block_registry.register()
-    class LSTMBlockConfig(StageBlock):
+    class LSTMBlock(StageBlock):
         block_type: str = "lstm"
 
         # Add whatever is needed
@@ -93,7 +95,7 @@ def test_from_yaml():
         my_property: int
 
         def to_model(self, model_dim: int, num_layers: int) -> torch.nn.Module:
-            return MyLSTM(
+            return LSTM(
                 torch.nn.LSTM(
                     input_size=model_dim,
                     hidden_size=model_dim,
@@ -125,3 +127,6 @@ def test_from_yaml():
     mblm = MBLM(MBLMModelConfig.model_validate(parsed_config))
     x = torch.randint(0, 258, (1, 12)).long()
     mblm.forward(x, return_type=MBLMReturnType.LOSS)
+
+    # keep hidden in docs
+    assert isinstance(mblm.stage_models[0], LSTM)
