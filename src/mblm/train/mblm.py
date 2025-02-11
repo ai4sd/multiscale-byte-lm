@@ -23,7 +23,7 @@ SOFTWARE."""
 import math
 import os
 from abc import abstractmethod
-from typing import Any, Iterator, Protocol
+from typing import Any, Callable, Iterator, Protocol, TypeVar
 
 import torch
 from pydantic import Field
@@ -113,6 +113,9 @@ class MBLMTrainerDatasetImpl(Protocol):
         ...
 
 
+TDataset = TypeVar("TDataset", bound="MBLMTrainerDatasetImpl")
+
+
 class DatasetRegistry(dict[str, MBLMTrainerDatasetImpl]):
     """
     Dataset registry that allows (custom) datasets to be registered for usage
@@ -120,12 +123,22 @@ class DatasetRegistry(dict[str, MBLMTrainerDatasetImpl]):
     registered first.
     """
 
-    def register(self, dataset_id: str, klass: MBLMTrainerDatasetImpl) -> None:
+    def register(self, dataset_id: str) -> Callable[[type[TDataset]], type[TDataset]]:
         """
-        Register a dataset that implements the methods required by
+        Decorator to register a dataset that implements the methods required by
         `MBLMTrainerDatasetImpl`.
+
+        Usage:
+            @dataset_registry.register("my_dataset")
+            class MyDataset(MBLMTrainerDatasetImpl):
+                pass
         """
-        return self.update({dataset_id: klass})
+
+        def decorator(dataset_klass: type[TDataset]) -> type[TDataset]:
+            self.update({dataset_id: dataset_klass})
+            return dataset_klass
+
+        return decorator
 
     def retrieve(self, dataset_id: str) -> MBLMTrainerDatasetImpl:
         """
@@ -207,8 +220,8 @@ class MegabyteTrainer(
 
 dataset_registry = DatasetRegistry()
 
-dataset_registry.register("pg19", PG19)
-dataset_registry.register("clevr", Clevr)
+dataset_registry.register("pg19")(PG19)
+dataset_registry.register("clevr")(Clevr)
 
 
 def train_mblm(config: TrainEntryConfig) -> None:
