@@ -543,4 +543,12 @@ Note that:
 
 ## Citation
 
-TBD.
+```bibtex
+@misc{egli2025multiscalebytelanguagemodels,
+      title={Multiscale Byte Language Models - A Hierarchical Architecture for Causal Million-Length Sequence Modeling},
+      author={Eric Egli and Matteo Manica and Jannis Born},
+      journal={arXiv preprint arXiv:2502.14553},
+      year={2025},
+      url={https://arxiv.org/abs/2502.14553},
+}
+```
