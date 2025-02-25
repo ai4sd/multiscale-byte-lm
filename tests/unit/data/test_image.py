@@ -106,5 +106,5 @@ class TestImagePipeline:
         assert np.isclose(original_image, output_image, atol=abs_tol, rtol=0).all()
 
     def test_downsample_error(self):
-        with pytest.raises(TypeError):
+        with pytest.raises(ValueError):
             ImagePipeline(NUMPY_IMAGE_RGB, ColorSpace.RGB).downsample_channels(0)

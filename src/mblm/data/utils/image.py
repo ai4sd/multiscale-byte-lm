@@ -147,7 +147,7 @@ class ImagePipeline:
             return self
 
         if max_num_channel_values < 1:
-            raise TypeError(
+            raise ValueError(
                 f"Min number of bins must be positive, received {max_num_channel_values}"
             )
 

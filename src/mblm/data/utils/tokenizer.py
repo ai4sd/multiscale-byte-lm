@@ -114,11 +114,11 @@ class TokenizerPipeline:
         return self
 
     def pad_right_to(self, to_length: int, strict: bool = True) -> TokenizerPipeline:
-        current_lengt = self.tensor.size(0)
-        pad_right = to_length - current_lengt
+        current_length = self.tensor.size(0)
+        pad_right = to_length - current_length
         if strict and pad_right < 0:
             raise ValueError(
-                f"Tensor at dim 0 (length {current_lengt}) larger than "
+                f"Tensor at dim 0 (length {current_length}) larger than "
                 f"desired padded size {to_length}"
             )
         self.tensor = F.pad(self.tensor.long(), (0, pad_right), value=self.options.pad_token_id)
