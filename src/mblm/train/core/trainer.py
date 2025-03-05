@@ -833,8 +833,9 @@ class CoreTrainer(ABC, Generic[TModel, TBatch, TModelParams, TTrainConfig, TIoCo
                 fw_exec_time = time() - start_fw_measure
                 train_loss_as_flt = float(train_loss.item())
                 if math.isnan(train_loss_as_flt):
+                    shape = batch.shape if isinstance(batch, torch.Tensor) else batch[0].shape
                     self._log.error(
-                        f"Invalid loss at batch {epoch_batch_idx}, epoch {epoch}. Train loss (raw): {train_loss}, batch: {batch.shape}"
+                        f"Invalid loss at batch {epoch_batch_idx}, epoch {epoch}. Train loss (raw): {train_loss}, batch: {shape}"
                     )
 
                 # scale the gradient
