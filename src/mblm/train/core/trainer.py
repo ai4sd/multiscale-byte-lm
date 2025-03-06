@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from time import time
-from typing import Any, Generic, Iterable, Iterator, Literal, TypeVar, cast
+from typing import Any, Generic, Iterable, Iterator, Literal, Sequence, TypeVar, cast
 
 import torch
 import torch.distributed as dist
@@ -62,7 +62,7 @@ from mblm.utils.misc import retry
 from mblm.utils.top_n import TopN
 
 TModel = TypeVar("TModel", bound=torch.nn.Module)
-TBatch = TypeVar("TBatch")
+TBatch = TypeVar("TBatch", bound=torch.Tensor | Sequence[torch.Tensor])
 
 
 @dataclass
@@ -762,8 +762,8 @@ class CoreTrainer(ABC, Generic[TModel, TBatch, TModelParams, TTrainConfig, TIoCo
         local_gradient_steps = local_batch_iters // train_conf.gradient_accumulate_every
         scheduler = self.configure_scheduler(optimizer, local_gradient_steps)
 
-        epoch = 0
-        epoch_batch_idx = 0
+        epoch: int = 0
+        epoch_batch_idx: int = 0
         if self.config.resume:
             self._log.debug("Resuming training, offsetting start epoch and batch index")
             epoch = self.config.resume.next_epoch_index
@@ -803,6 +803,10 @@ class CoreTrainer(ABC, Generic[TModel, TBatch, TModelParams, TTrainConfig, TIoCo
             mininterval=self.options.train_prog_min_interval_seconds,
             disable=not self.options.display_progress,
         ):
+            batch: TBatch
+            next_epoch: int
+            next_batch_idx: int
+
             epoch, epoch_batch_idx, batch = iteration.epoch, iteration.batch, iteration.item
             next_epoch, next_batch_idx = iteration.next_epoch, iteration.next_batch
 
@@ -833,8 +837,9 @@ class CoreTrainer(ABC, Generic[TModel, TBatch, TModelParams, TTrainConfig, TIoCo
                 fw_exec_time = time() - start_fw_measure
                 train_loss_as_flt = float(train_loss.item())
                 if math.isnan(train_loss_as_flt):
+                    shape = batch.shape if isinstance(batch, torch.Tensor) else batch[0].shape
                     self._log.error(
-                        f"Invalid loss at batch {epoch_batch_idx}, epoch {epoch}. Train loss (raw): {train_loss}, batch: {batch.shape}"
+                        f"Invalid loss at batch {epoch_batch_idx}, epoch {epoch}. Train loss (raw): {train_loss}, batch: {shape}"
                     )
 
                 # scale the gradient
