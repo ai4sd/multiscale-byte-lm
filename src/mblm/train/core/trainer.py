@@ -62,7 +62,7 @@ from mblm.utils.misc import retry
 from mblm.utils.top_n import TopN
 
 TModel = TypeVar("TModel", bound=torch.nn.Module)
-TBatch = TypeVar("TBatch")
+TBatch = TypeVar("TBatch", bound=torch.Tensor | Iterable[torch.Tensor])
 
 
 @dataclass
@@ -803,6 +803,12 @@ class CoreTrainer(ABC, Generic[TModel, TBatch, TModelParams, TTrainConfig, TIoCo
             mininterval=self.options.train_prog_min_interval_seconds,
             disable=not self.options.display_progress,
         ):
+            epoch: int
+            epoch_batch_idx: int
+            batch: TBatch
+            next_epoch: int
+            next_batch_idx: int
+
             epoch, epoch_batch_idx, batch = iteration.epoch, iteration.batch, iteration.item
             next_epoch, next_batch_idx = iteration.next_epoch, iteration.next_batch
 
