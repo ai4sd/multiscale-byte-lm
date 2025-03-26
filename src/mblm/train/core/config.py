@@ -79,6 +79,14 @@ class CoreTrainConfig(BaseModel):
     )
 
 
+class MaskedTrainConfig(CoreTrainConfig):
+    """The parameters for training using a masked language modeling objective, used with the `MaskedTrainer`."""
+
+    masking_proba: int = Field(
+        description="The probability of masking a token during the masked Pre-training"
+    )
+
+
 class ResumeConfig(BaseModel):
     """
     The resume parameters needed for to resume training from a checkpoint and a

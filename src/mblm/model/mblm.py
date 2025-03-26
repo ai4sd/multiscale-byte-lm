@@ -22,7 +22,7 @@ SOFTWARE."""
 
 import logging
 import math
-from typing import Iterable, Literal, Sequence, cast, overload
+from typing import Iterable, Literal, Optional, Sequence, cast, overload
 
 import torch
 import torch.nn.functional as F  # noqa: N812
@@ -33,7 +33,7 @@ from torch.utils.checkpoint import checkpoint
 from tqdm import tqdm
 
 from mblm.model.block import StageBlock
-from mblm.model.config import MBLMModelConfig, MBLMReturnType
+from mblm.model.config import MaskedMBLMModelConfig, MBLMModelConfig, MBLMReturnType
 from mblm.model.utils import RoPE, gumbel_sample, top_k
 from mblm.utils.stream import ByteStreamer
 
@@ -425,6 +425,14 @@ class MBLM(nn.Module):
             # from (..., P_n, D_n) to (..., P_n, P_n+1, D_n+1)
             prev_stage_tokens_repr = proj(attended[..., :-1, :])
 
+        if return_type == MBLMReturnType.HIDDEN_STATE:
+            if flattened_dims:
+                # drop the start tokens and combine inner dimensions into one
+                attended = rearrange(attended[..., 1:, :], "b ... v -> b (...) v")
+                # remove the padding
+                attended = attended[:, :flat_seq_len]
+            return attended
+
         logits = self.to_logits.forward(attended)  # (B, P_1', P_2, ..., 1 + P_n, V)
 
         logits_out = logits
@@ -554,3 +562,25 @@ class MBLM(nn.Module):
         if stream is not None:
             stream.flush()
         return sequence.squeeze()
+
+
+class MaskedMBLM(nn.Module):
+    def __init__(self, config: MaskedMBLMModelConfig, **kwargs):
+        self.mask_token_id = config.mask_token_id
+        self.mblm = MBLM(config.mblm_config)
+        super().__init__(**kwargs)
+
+    def forward(
+        self,
+        masked_input_id: torch.Tensor,
+        labels: Optional[torch.Tensor] = None,
+        mask: Optional[torch.Tensor] = None,
+        return_type: MBLMReturnType = MBLMReturnType.HIDDEN_STATE,
+    ):
+        raise NotImplementedError()
+        # TODO Don't compute the loss on the padded tokens
+        if return_type == MBLMReturnType.HIDDEN_STATE:
+            return self.mblm.forward(masked_input_id, return_type=MBLMReturnType.HIDDEN_STATE)
+        output = self.mblm.forward(masked_input_id, return_type=MBLMReturnType.LOGITS)
+        _ = output * mask
+        return output, labels

@@ -26,15 +26,17 @@ import importlib.metadata
 __version__ = importlib.metadata.version("mblm")
 
 
-from mblm.model.config import MBLMModelConfig, MBLMReturnType
+from mblm.model.config import MaskedMBLMModelConfig, MBLMModelConfig, MBLMReturnType
 from mblm.model.mamba import MambaBlock
 from mblm.model.mblm import MBLM
-from mblm.model.transformer import TransformerBlock
+from mblm.model.transformer import TransformerBlock, TransformerEncoderBlock
 
 __all__ = [
     "MBLM",
     "MBLMModelConfig",
+    "MaskedMBLMModelConfig",
     "MBLMReturnType",
     "TransformerBlock",
+    "TransformerEncoderBlock",
     "MambaBlock",
 ]
