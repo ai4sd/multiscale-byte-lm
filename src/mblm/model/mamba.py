@@ -21,7 +21,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
 
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from mblm.model.block import StageBlock
 from mblm.model.mamba_shim import Mamba1, Mamba1Config, Mamba2Mixer
@@ -79,3 +79,9 @@ class MambaBlock(StageBlock):
         raise RuntimeError(
             "Failed to import any Mamba version - this should never happen",
         )
+
+    @model_validator(mode="after")
+    def validate_block_type(self):
+        if "mamba" not in self.block_type:
+            raise ValueError("This model is a mamba block")
+        return self

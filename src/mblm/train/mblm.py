@@ -290,8 +290,6 @@ masked_dataset_registry = MaskedDatasetRegistry()
 dataset_registry.register("pg19")(PG19)
 dataset_registry.register("clevr")(Clevr)
 
-# masked_dataset_registry.register("maskedpg19")(PG19Masked)
-
 
 # def train_masked_mblm(config: TrainMaskedEntryConfig) -> None:
 #     log = create_logger(__name__, log_dir=config.io.output_dir)

@@ -32,14 +32,14 @@ from MEGABYTE_pytorch.megabyte import (
     RotaryEmbedding,
     token_shift,
 )
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from mblm.model.block import StageBlock
 
 
 class TransformerBlock(StageBlock):
     """
-    General config for creating a Transformer Decocer block inside MBLM.
+    General config for creating a Transformer Decoder block inside MBLM.
     """
 
     attn_head_dims: int
@@ -64,6 +64,12 @@ class TransformerBlock(StageBlock):
             ff_mult=self.ff_multiplier,
             use_flash_attn=self.use_flash_attn,
         )
+
+    @model_validator(mode="after")
+    def validate_block_type(self):
+        if self.block_type != "transformer":
+            raise ValueError("This model is a transformer")
+        return self
 
 
 class TransformerDecoder(torch.nn.Module):
@@ -139,6 +145,12 @@ class TransformerEncoderBlock(StageBlock):
             ff_mult=self.ff_multiplier,
             use_flash_attn=self.use_flash_attn,
         )
+
+    @model_validator(mode="after")
+    def validate_block_type(self):
+        if self.block_type != "transformerEncoder":
+            raise ValueError("This model is a transformerEncoder")
+        return self
 
 
 class TransformerEncoder(torch.nn.Module):
