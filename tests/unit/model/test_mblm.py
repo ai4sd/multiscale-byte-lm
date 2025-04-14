@@ -224,3 +224,44 @@ class TestMaskedMBLM:
         assert loss.shape == loss_only.shape
         assert torch.isclose(loss, loss_only), f"{loss.item()} is not close to {loss_only.item()}"
         assert torch.all(logits == logits_only), f"{logits} does not equal  {logits_only}"
+
+    @pytest.mark.parametrize("batch", [1, 3])
+    def test_masked_mblm_input_seq_len(self, batch):
+        max_input_length = int(torch.prod(torch.tensor(self.mblm_conf.seq_lens)).item())
+        for current_input_len in [
+            max_input_length // 2,
+            max_input_length // 4,
+            max_input_length + 1,
+        ]:
+            masked_model = MaskedMBLM(
+                MaskedMBLMModelConfig(mask_token_id=self.mask_token_id, mblm_config=self.mblm_conf)
+            )
+            input_ids = torch.randint(
+                0, self.num_tokens, size=(batch, current_input_len), dtype=torch.long
+            )
+            masked_input = input_ids.clone()
+            mask = torch.rand_like(input_ids, dtype=torch.float) < 0.15
+            mask = mask.to(torch.bool)
+            masked_input[mask] = self.mask_token_id
+            # Each time the sequence length is too big we fail
+            if current_input_len > max_input_length:
+                with pytest.raises(AssertionError):
+                    masked_model.forward(
+                        masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS_LOGITS
+                    )
+            else:
+                loss, logits = masked_model.forward(
+                    masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS_LOGITS
+                )
+                loss_only = masked_model.forward(
+                    masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS
+                )
+                logits_only = masked_model.forward(
+                    masked_input, mask, input_ids, return_type=MBLMReturnType.LOGITS
+                )
+            assert logits.shape == logits_only.shape
+            assert loss.shape == loss_only.shape
+            assert torch.isclose(
+                loss, loss_only
+            ), f"{loss.item()} is not close to {loss_only.item()}"
+            assert torch.all(logits == logits_only), f"{logits} does not equal  {logits_only}"
