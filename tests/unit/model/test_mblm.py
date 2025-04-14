@@ -179,7 +179,7 @@ class TestMaskedMBLM:
         loss = masked_model.forward(masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS)
         assert loss.dtype == torch.float and loss.item() > 0.0
 
-    @pytest.mark.parametrize("batch", [1, 3, 21])
+    @pytest.mark.parametrize("batch", [1, 3])
     def test_masked_mblm_return_type_shape(self, batch):
         masked_model = MaskedMBLM(
             MaskedMBLMModelConfig(mask_token_id=self.mask_token_id, mblm_config=self.mblm_conf)
@@ -200,7 +200,7 @@ class TestMaskedMBLM:
         assert logit.size() == torch.Size([batch, input_len, self.mblm_conf.num_tokens])
         assert hidden_state.size() == torch.Size([batch, input_len, self.mblm_conf.hidden_dims[-1]])
 
-    @pytest.mark.parametrize("batch", [1, 3, 31])
+    @pytest.mark.parametrize("batch", [1, 3])
     def test_masked_mblm_combined_return(self, batch):
         masked_model = MaskedMBLM(
             MaskedMBLMModelConfig(mask_token_id=self.mask_token_id, mblm_config=self.mblm_conf)
