@@ -5,6 +5,7 @@ import pytest
 
 from mblm import MBLM, MambaBlock, MBLMModelConfig, TransformerBlock
 from mblm.data.dataset.clevr import ClevrOptionalArgs
+from mblm.model.transformer import TransformerEncoderBlock
 from mblm.train.mblm import TrainEntryConfig
 from mblm.utils.io import load_yml
 
@@ -29,9 +30,11 @@ class TestConfigToModel:
 
     def ensure_model_is_created(self, config: TrainEntryConfig) -> None:
         for b in config.params.stage_blocks():
-            assert isinstance(b, (TransformerBlock, MambaBlock))
+            assert isinstance(b, (TransformerBlock, MambaBlock, TransformerEncoderBlock))
             if isinstance(b, TransformerBlock):
                 assert b.block_type == "transformer"
+            elif isinstance(b, TransformerEncoderBlock):
+                assert b.block_type == "transformerEncoder"
             else:
                 # mamba1, can be mamba2 (only if tested on Linux with mamba_ssm installed)
                 assert b.block_type.startswith("mamba")

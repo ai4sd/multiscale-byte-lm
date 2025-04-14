@@ -231,7 +231,9 @@ class MBLM(nn.Module):
         self,
         input_ids: torch.Tensor,
         *,
-        return_type: Literal[MBLMReturnType.LOSS, MBLMReturnType.LOGITS] = ...,
+        return_type: Literal[
+            MBLMReturnType.LOSS, MBLMReturnType.LOGITS, MBLMReturnType.HIDDEN_STATE
+        ] = ...,
         loss_mask: torch.Tensor | None = None,
     ) -> torch.Tensor: ...
 
@@ -566,21 +568,41 @@ class MBLM(nn.Module):
 
 class MaskedMBLM(nn.Module):
     def __init__(self, config: MaskedMBLMModelConfig, **kwargs):
+        super().__init__(**kwargs)
         self.mask_token_id = config.mask_token_id
         self.mblm = MBLM(config.mblm_config)
-        super().__init__(**kwargs)
 
     def forward(
         self,
-        masked_input_id: torch.Tensor,
-        labels: Optional[torch.Tensor] = None,
+        masked_input_ids: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
+        labels: Optional[torch.Tensor] = None,
         return_type: MBLMReturnType = MBLMReturnType.HIDDEN_STATE,
     ):
-        raise NotImplementedError()
-        # TODO Don't compute the loss on the padded tokens
+        logging.debug(f"{masked_input_ids=},{mask=},{labels=}")
         if return_type == MBLMReturnType.HIDDEN_STATE:
-            return self.mblm.forward(masked_input_id, return_type=MBLMReturnType.HIDDEN_STATE)
-        output = self.mblm.forward(masked_input_id, return_type=MBLMReturnType.LOGITS)
-        _ = output * mask
-        return output, labels
+            return self.mblm.forward(masked_input_ids, return_type=MBLMReturnType.HIDDEN_STATE)
+
+        logits = self.mblm.forward(masked_input_ids, return_type=MBLMReturnType.LOGITS)
+        if return_type == MBLMReturnType.LOGITS:
+            return logits
+        # ignore non mask token in the loss computation, this is used with the ignore_index parameter of cross_entropy
+        if mask is None or labels is None:
+            raise ValueError("Unable to compute the loss without a mask and labels")
+        assert mask.dtype == torch.bool, (
+            f"The mask tensor should should be of dtype bool, currently is {mask.dtype}"
+        )
+        assert mask.shape == labels.shape, (
+            f"mask and labels shape should be equivalent, but mask={mask.shape} and labels={labels.shape}"
+        )
+        labels[~mask] = -100
+        logits = rearrange(logits, "b s v -> b v s")
+        # target is Batch, Seq_len
+        loss = torch.nn.functional.cross_entropy(input=logits, target=labels, ignore_index=-100)
+
+        if return_type == MBLMReturnType.LOSS:
+            return loss
+        if return_type == MBLMReturnType.LOSS_LOGITS:
+            return loss, rearrange(logits, "b v s -> b s v")
+        else:
+            raise ValueError("New return type is not currently handled")

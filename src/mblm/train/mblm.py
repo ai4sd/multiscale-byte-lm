@@ -33,6 +33,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, LRScheduler, S
 from mblm import MBLM, MaskedMBLMModelConfig, MBLMModelConfig, MBLMReturnType
 from mblm.data.dataset.clevr import Clevr
 from mblm.data.dataset.pg19 import PG19
+from mblm.data.dataset.pg19_masked import PG19Masked
 from mblm.data.datasets import DistributedDataset
 from mblm.data.types import BatchMaskedForMLM, BatchWithLossMask, ModelMode
 from mblm.model.embeddings import MBLM_TOKEN_EMB_MIGRATION
@@ -44,7 +45,7 @@ from mblm.train.core.config import (
     CoreTrainConfig,
     GenericEntryConfig,
     GenericOutputConfig,
-    MaskedTrainConfig,
+    TrainMaskedConfig,
 )
 from mblm.train.core.trainer import CoreTrainer
 from mblm.utils.distributed import process_group
@@ -98,7 +99,7 @@ class TrainEntryConfig(GenericEntryConfig[TrainMBLMParams, CoreTrainConfig, Trai
 
 
 class TrainMaskedEntryConfig(
-    GenericEntryConfig[TrainMaskedMBLMParams, MaskedTrainConfig, TrainMBLMIoConfig]
+    GenericEntryConfig[TrainMaskedMBLMParams, TrainMaskedConfig, TrainMBLMIoConfig]
 ):
     """
     Class used to parse all required input configuration for training an MBLM ENCODER.
@@ -286,39 +287,40 @@ class MegabyteTrainer(
 
 dataset_registry = DatasetRegistry()
 masked_dataset_registry = MaskedDatasetRegistry()
+masked_dataset_registry.register("pg19masked")(PG19Masked)
 
 dataset_registry.register("pg19")(PG19)
 dataset_registry.register("clevr")(Clevr)
 
 
-# def train_masked_mblm(config: TrainMaskedEntryConfig) -> None:
-#     log = create_logger(__name__, log_dir=config.io.output_dir)
-#     try:
-#         with process_group(backend="nccl") as run_vars:
-#             dataset = dataset_registry.retrieve("pg19masked")
-#             train_dataset = dataset.from_train_entry_config(
-#                 config=config,
-#                 mode=ModelMode.TRAIN,
-#                 workder_id=run_vars.local_rank,
-#                 num_workers=run_vars.world_size,
-#             )
-#             eval_dataset = dataset.from_train_entry_config(
-#                 config=config,
-#                 mode=ModelMode.VALID,
-#                 workder_id=0,
-#                 num_workers=1,
-#             )
-#             trainer = MaskedTrainer(config, run_vars=run_vars)
-#             best_model = trainer.train(train_dataset, eval_dataset)
-#             if best_model and dataset.supports_test_mode():
-#                 test_dataset = dataset.from_train_entry_config(
-#                     config, mode=ModelMode.TEST, worker_id=0, num_workers=1
-#                 )
-#                 trainer.test(test_dataset=test_dataset, model=best_model)
+def train_masked_mblm(config: TrainMaskedEntryConfig) -> None:
+    log = create_logger(__name__, log_dir=config.io.output_dir)
+    try:
+        with process_group(backend="nccl") as run_vars:
+            dataset = masked_dataset_registry.retrieve("pg19masked")
+            train_dataset = dataset.from_train_entry_config(
+                config=config,
+                mode=ModelMode.TRAIN,
+                worker_id=run_vars.local_rank,
+                num_workers=run_vars.world_size,
+            )
+            eval_dataset = dataset.from_train_entry_config(
+                config=config,
+                mode=ModelMode.VALID,
+                worker_id=0,
+                num_workers=1,
+            )
+            trainer = MaskedTrainer(config, run_vars=run_vars)
+            best_model = trainer.train(train_dataset, eval_dataset)
+            if best_model and dataset.supports_test_mode():
+                test_dataset = dataset.from_train_entry_config(
+                    config, mode=ModelMode.TEST, worker_id=0, num_workers=1
+                )
+                trainer.test(test_dataset=test_dataset, model=best_model)
 
-#     except Exception as error:
-#         log.fatal(error, exc_info=True)
-#         shutdown_log_handlers()
+    except Exception as error:
+        log.fatal(error, exc_info=True)
+        shutdown_log_handlers()
 
 
 def train_mblm(config: TrainEntryConfig) -> None:
@@ -358,20 +360,9 @@ def train_mblm(config: TrainEntryConfig) -> None:
         shutdown_log_handlers()
 
 
-# class MegabyteTrainer(
-#     CoreTrainer[
-#         MBLM,
-#         BatchWithLossMask,
-#         TrainMBLMParams,
-#         CoreTrainConfig,
-#         CoreIoConfig,
-#     ]
-# ):
-
-
 class MaskedTrainer(
     CoreTrainer[
-        MaskedMBLM, BatchMaskedForMLM, TrainMaskedMBLMParams, MaskedTrainConfig, CoreIoConfig
+        MaskedMBLM, BatchMaskedForMLM, TrainMaskedMBLMParams, TrainMaskedConfig, CoreIoConfig
     ]
 ):
     def init_model(self):
@@ -385,10 +376,10 @@ class MaskedTrainer(
     def model_forward(self, model: MaskedMBLM, batch: BatchMaskedForMLM, device) -> torch.Tensor:
         tokens_masked, mask, labels = batch
         inputs = tokens_masked.to(device)
-        loss_mask = mask.to(device)
+        mask = mask.to(device)
         labels = labels.to(device)
         loss: torch.Tensor = model.forward(
-            masked_input_id=inputs, labels=labels, mask=loss_mask, return_type=MBLMReturnType.LOSS
+            masked_input_ids=inputs, mask=mask, labels=labels, return_type=MBLMReturnType.LOSS
         )
         return loss
 

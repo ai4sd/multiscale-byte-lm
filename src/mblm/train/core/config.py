@@ -79,10 +79,10 @@ class CoreTrainConfig(BaseModel):
     )
 
 
-class MaskedTrainConfig(CoreTrainConfig):
+class TrainMaskedConfig(CoreTrainConfig):
     """The parameters for training using a masked language modeling objective, used with the `MaskedTrainer`."""
 
-    masking_proba: int = Field(
+    masking_proba: float = Field(
         description="The probability of masking a token during the masked Pre-training"
     )
 

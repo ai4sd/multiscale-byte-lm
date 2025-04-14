@@ -27,7 +27,6 @@ import random
 from pathlib import Path
 from typing import TYPE_CHECKING, Generator
 
-# from pathlib.
 import torch
 import tqdm
 from pydantic import BaseModel
@@ -36,7 +35,8 @@ from typing_extensions import Unpack
 from mblm.data.datasets import DistributedDataset, DistributedDatasetConfig
 from mblm.data.types import BatchMaskedForMLM, ModelMode
 from mblm.data.utils import Bytes
-from mblm.train.mblm import masked_dataset_registry
+
+# from mblm.train.mblm import masked_dataset_registry
 
 if TYPE_CHECKING:
     from mblm.train.mblm import TrainMaskedEntryConfig
@@ -54,7 +54,7 @@ class PG19ModelGeneration(BaseModel):
     timestamp: str
 
 
-@masked_dataset_registry.register("maskedPG19")
+# @masked_dataset_registry.register("maskedPG19")
 class PG19Masked(DistributedDataset[BatchMaskedForMLM]):
     """
     https://github.com/google-deepmind/pg19
@@ -73,12 +73,13 @@ class PG19Masked(DistributedDataset[BatchMaskedForMLM]):
 
     def __init__(
         self,
-        masked_token_id: int,
         data_dir: str | Path,
         mode: ModelMode,
+        masked_token_id: int = -100,
         masking_proba: float = 0.15,
         load_mininterval: int = 30,
         display_load_progress: bool = True,
+        padding_token_id: int = -101,
         **config: Unpack[DistributedDatasetConfig],
     ):
         root = Path(data_dir)
@@ -99,6 +100,10 @@ class PG19Masked(DistributedDataset[BatchMaskedForMLM]):
                 data_buff.extend(f.read())
         self.data = Bytes.bytes_to_tensor(data_buff)
         self.masked_token_id = masked_token_id
+        self.padding_token_id = padding_token_id
+        if masked_token_id == padding_token_id:
+            raise ValueError("You can't set the padding and the mask with the same value")
+
         super().__init__(
             data_size=self.data.numel(),
             is_sequential=True,
@@ -134,8 +139,19 @@ class PG19Masked(DistributedDataset[BatchMaskedForMLM]):
         sample = self.data[from_idx : from_idx + self.seq_len].long()
         mask = torch.rand(sample.size()) < self.masking_proba
         tokens_masked = sample.clone()
+
+        # TODO implement same strategy as BERT and even when token is masked, sometimes copy the correct token, not the masked_token_id
         tokens_masked[mask] = self.masked_token_id
-        return tokens_masked, mask, sample
+        # Padd if necessary, should only be needed when from_idx == len(self)
+        if sample.size(-1) != self.seq_len:
+            # padd with tensors with padding_token_id
+            pad_tensor = self.padding_token_id * torch.ones(self.seq_len - sample.size(-1))
+            tokens_masked = torch.concat((tokens_masked, pad_tensor))
+            # pad_tensor * 0 ensures that the loss is never computed over the padding tokens
+            # as 1 shows MASKED elements and 0 non-MASKED token
+            mask = torch.concat((mask, pad_tensor * 0))
+            sample = torch.concat((sample, pad_tensor))
+        return tokens_masked.long(), mask.bool(), sample.long()
 
     def book(self, name: str) -> str:
         """
