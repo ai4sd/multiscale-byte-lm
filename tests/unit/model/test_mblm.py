@@ -155,7 +155,7 @@ class TestMaskedMBLM:
         masked_model = MaskedMBLM(
             MaskedMBLMModelConfig(mask_token_id=self.mask_token_id, mblm_config=self.mblm_conf)
         )
-        input_len = torch.prod(torch.tensor(self.mblm_conf.seq_lens))
+        input_len = int(torch.prod(torch.tensor(self.mblm_conf.seq_lens)).item())
         input_ids = torch.randint(0, self.num_tokens, size=(1, input_len), dtype=torch.long)
         masked_input = input_ids.clone()
         mask = torch.zeros_like(input_ids)
@@ -170,7 +170,7 @@ class TestMaskedMBLM:
         masked_model = MaskedMBLM(
             MaskedMBLMModelConfig(mask_token_id=self.mask_token_id, mblm_config=self.mblm_conf)
         )
-        input_len = torch.prod(torch.tensor(self.mblm_conf.seq_lens))
+        input_len = int(torch.prod(torch.tensor(self.mblm_conf.seq_lens)).item())
         input_ids = torch.randint(0, self.num_tokens, size=(1, input_len), dtype=torch.long)
         masked_input = input_ids.clone()
         mask = torch.rand_like(input_ids, dtype=torch.float) < 0.15
@@ -184,7 +184,7 @@ class TestMaskedMBLM:
         masked_model = MaskedMBLM(
             MaskedMBLMModelConfig(mask_token_id=self.mask_token_id, mblm_config=self.mblm_conf)
         )
-        input_len = torch.prod(torch.tensor(self.mblm_conf.seq_lens))
+        input_len = int(torch.prod(torch.tensor(self.mblm_conf.seq_lens)).item())
         input_ids = torch.randint(0, self.num_tokens, size=(batch, input_len), dtype=torch.long)
         masked_input = input_ids.clone()
         mask = torch.rand_like(input_ids, dtype=torch.float) < 0.15
@@ -205,7 +205,7 @@ class TestMaskedMBLM:
         masked_model = MaskedMBLM(
             MaskedMBLMModelConfig(mask_token_id=self.mask_token_id, mblm_config=self.mblm_conf)
         )
-        input_len = torch.prod(torch.tensor(self.mblm_conf.seq_lens))
+        input_len = int(torch.prod(torch.tensor(self.mblm_conf.seq_lens)).item())
         input_ids = torch.randint(0, self.num_tokens, size=(batch, input_len), dtype=torch.long)
         masked_input = input_ids.clone()
         mask = torch.rand_like(input_ids, dtype=torch.float) < 0.15
