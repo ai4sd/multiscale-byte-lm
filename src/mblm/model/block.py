@@ -98,4 +98,4 @@ class StageBlockRegistry(set[type[StageBlock]]):
             except Exception:
                 pass
 
-        raise ValueError(f"Coult not parse data to any of {self}")
+        raise ValueError(f"Could not parse data to any of {self}")
