@@ -28,6 +28,9 @@ import torch
 import torch.version
 from torch.types import Device
 
+IS_CUDA_AVAILABLE = torch.cuda.is_available()
+IS_BF16_AVAILABLE = IS_CUDA_AVAILABLE and torch.cuda.is_bf16_supported()
+
 
 @dataclass
 class CudaProperties:

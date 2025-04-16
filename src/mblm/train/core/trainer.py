@@ -54,7 +54,7 @@ from mblm.train.core.config import (
     TTrainConfig,
 )
 from mblm.train.core.iter import epoch_cycler
-from mblm.utils.cuda import cuda_memory_snapshot, cuda_properties
+from mblm.utils.cuda import cuda_memory_snapshot, cuda_properties, IS_BF16_AVAILABLE
 from mblm.utils.distributed import ElasticRunVars
 from mblm.utils.io import CSVWriter, StateDict, dump_yml, load_model_state, save_model_state
 from mblm.utils.logging import create_logger
@@ -76,7 +76,7 @@ class CoreTrainerOptions:
     train_prog_min_interval_seconds: int = 1
     valid_prog_min_interval_seconds: int = 1
     track_first_fw_bw_exec_times: int | None = 30  # for 30 first passes, track fw/bw time
-    amp_dtype: torch.dtype = torch.half  # may use bfloat16
+    amp_dtype: torch.dtype = torch.bfloat16 if IS_BF16_AVAILABLE else torch.half
 
 
 class CoreTrainer(ABC, Generic[TModel, TBatch, TModelParams, TTrainConfig, TIoConfig]):
