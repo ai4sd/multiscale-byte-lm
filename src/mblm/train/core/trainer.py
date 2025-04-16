@@ -56,7 +56,13 @@ from mblm.train.core.config import (
 from mblm.train.core.iter import epoch_cycler
 from mblm.utils.cuda import IS_BF16_AVAILABLE, cuda_memory_snapshot, cuda_properties
 from mblm.utils.distributed import ElasticRunVars
-from mblm.utils.io import CSVWriter, StateDict, dump_yml, load_model_state, save_model_state
+from mblm.utils.io import (
+    CSVWriter,
+    StateDict,
+    dump_yml,
+    load_model_state,
+    save_model_state,
+)
 from mblm.utils.logging import create_logger
 from mblm.utils.misc import retry
 from mblm.utils.top_n import TopN
