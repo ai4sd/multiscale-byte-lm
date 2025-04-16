@@ -588,12 +588,12 @@ class MBLMEncoder(nn.Module):
         # ignore non mask token in the loss computation, this is used with the ignore_index parameter of cross_entropy
         if mask is None or labels is None:
             raise ValueError("Unable to compute the loss without a mask and labels")
-        assert mask.dtype == torch.bool, (
-            f"The mask tensor should should be of dtype bool, currently is {mask.dtype}"
-        )
-        assert mask.shape == labels.shape, (
-            f"mask and labels shape should be equivalent, but mask={mask.shape} and labels={labels.shape}"
-        )
+        assert (
+            mask.dtype == torch.bool
+        ), f"The mask tensor should should be of dtype bool, currently is {mask.dtype}"
+        assert (
+            mask.shape == labels.shape
+        ), f"mask and labels shape should be equivalent, but mask={mask.shape} and labels={labels.shape}"
         labels[~mask] = self.mask_token_id
         logits = rearrange(logits, "b s v -> b v s")
         # target is Batch, Seq_len
