@@ -54,7 +54,7 @@ from mblm.train.core.config import (
     TTrainConfig,
 )
 from mblm.train.core.iter import epoch_cycler
-from mblm.utils.cuda import cuda_memory_snapshot, cuda_properties, IS_BF16_AVAILABLE
+from mblm.utils.cuda import IS_BF16_AVAILABLE, cuda_memory_snapshot, cuda_properties
 from mblm.utils.distributed import ElasticRunVars
 from mblm.utils.io import CSVWriter, StateDict, dump_yml, load_model_state, save_model_state
 from mblm.utils.logging import create_logger
@@ -159,7 +159,9 @@ class CoreTrainer(ABC, Generic[TModel, TBatch, TModelParams, TTrainConfig, TIoCo
         )
 
         assert config.io.validate_amount > 0, "Validate amount must be strictly positive"
-        assert config.io.num_models_to_save > 0, "Must save at least 1 model"
+        assert config.io.num_models_to_save >= 0, "num_models_to_save cant be negative"
+        if config.io.num_models_to_save == 0:
+            self._log.warning("No model of this training will be saved!")
 
         if config.io.validate_amount < config.io.num_models_to_save:
             self._log.warning(
@@ -963,7 +965,7 @@ class CoreTrainer(ABC, Generic[TModel, TBatch, TModelParams, TTrainConfig, TIoCo
 
         best_model = self._unpack_distributed_model(self._model_dist)
 
-        if self._is_main_worker:
+        if self._is_main_worker and self.config.io.num_models_to_save > 0:
             # if, on the main worker, populate the model with the best state
             # non-main workers will simply return the latest model, which won't
             # be used anyway because testing happens only on the main worker
@@ -1003,4 +1005,3 @@ class CoreTrainer(ABC, Generic[TModel, TBatch, TModelParams, TTrainConfig, TIoCo
             avg_grad_clipped=-1,
         )
         self._log.info("Finished testing")
-        return None
