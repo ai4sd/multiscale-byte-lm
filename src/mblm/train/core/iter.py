@@ -84,7 +84,9 @@ def epoch_cycler(
     epoch = start_epoch
     global_batch_counter = 0
     if start_batch >= len(seq):
-        raise IndexError("start_batch is larger than the length of the sequence")
+        raise IndexError(
+            f"start_batch ({start_batch}) is larger than the length of the sequence ({len(seq)})"
+        )
 
     if before_new_epoch:
         before_new_epoch(epoch)

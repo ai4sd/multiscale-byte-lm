@@ -195,9 +195,7 @@ class TransformerEncoder(torch.nn.Module):
         rotary_emb: torch.Tensor | None = self.rotary_emb(n) if self.rotary_emb else None
 
         for attn, ff in cast(Iterable[tuple[Callable, Callable]], self.layers):
-            # input_ids = attn(token_shift(input_ids), rotary_emb=rotary_emb) + input_ids
-            # input_ids = ff(token_shift(input_ids)) + input_ids
-            input_ids = attn(input_ids, rotary_emb=rotary_emb) + input_ids
+            input_ids = attn(input_ids, rotary_emb=rotary_emb) + input_ids  #
             input_ids = ff(input_ids) + input_ids
 
         return self.norm(input_ids)

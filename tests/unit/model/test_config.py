@@ -7,7 +7,7 @@ from mblm import (
     TransformerEncoderBlock,
 )
 from mblm.model.block import StageBlock
-from mblm.model.config import MaskedMBLMModelConfig
+from mblm.model.config import MBLMEncoderModelConfig
 
 block_transformer = TransformerBlock(
     attn_head_dims=64,
@@ -64,7 +64,7 @@ TEST_ENCODER_CONFIGS: list[StageBlock | list[StageBlock]] = [
 class TestConfigSerializeEncoder:
     @pytest.mark.parametrize("encoder_block", TEST_ENCODER_CONFIGS)
     def test_serialize(self, encoder_block: StageBlock | list[StageBlock]):
-        config = MaskedMBLMModelConfig(
+        config = MBLMEncoderModelConfig(
             mask_token_id=-100,
             mblm_config=MBLMModelConfig(
                 num_tokens=257,
@@ -76,5 +76,5 @@ class TestConfigSerializeEncoder:
                 block=encoder_block,
             ),
         )
-        assert config == MaskedMBLMModelConfig.model_validate(config.model_dump())
-        assert config == MaskedMBLMModelConfig.model_validate_json(config.model_dump_json())
+        assert config == MBLMEncoderModelConfig.model_validate(config.model_dump())
+        assert config == MBLMEncoderModelConfig.model_validate_json(config.model_dump_json())

@@ -30,14 +30,14 @@ from pydantic import Field
 from torch.optim import Adam, Optimizer  # type: ignore
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, LRScheduler, SequentialLR
 
-from mblm import MBLM, MaskedMBLMModelConfig, MBLMModelConfig, MBLMReturnType
+from mblm import MBLM, MBLMEncoderModelConfig, MBLMModelConfig, MBLMReturnType
 from mblm.data.dataset.clevr import Clevr
 from mblm.data.dataset.pg19 import PG19
 from mblm.data.dataset.pg19_masked import PG19Masked
 from mblm.data.datasets import DistributedDataset
 from mblm.data.types import BatchMaskedForMLM, BatchWithLossMask, ModelMode
 from mblm.model.embeddings import MBLM_TOKEN_EMB_MIGRATION
-from mblm.model.mblm import MaskedMBLM
+from mblm.model.mblm import MBLMEncoder
 from mblm.model.utils import count_params
 from mblm.train.core.config import (
     CoreIoConfig,
@@ -60,7 +60,7 @@ class TrainMBLMParams(MBLMModelConfig, CoreModelParams):
     pass
 
 
-class TrainMaskedMBLMParams(MaskedMBLMModelConfig, CoreModelParams):
+class TrainMaskedMBLMParams(MBLMEncoderModelConfig, CoreModelParams):
     """
     Combine the params required by the MBLM model and the trainer.
     """
@@ -293,11 +293,11 @@ dataset_registry.register("pg19")(PG19)
 dataset_registry.register("clevr")(Clevr)
 
 
-def train_masked_mblm(config: TrainMaskedEntryConfig) -> None:
+def train_encoder_mblm(config: TrainMaskedEntryConfig) -> None:
     log = create_logger(__name__, log_dir=config.io.output_dir)
     try:
-        with process_group(backend="nccl") as run_vars:
-            dataset = masked_dataset_registry.retrieve("pg19masked")
+        with process_group(backend="gloo") as run_vars:
+            dataset = masked_dataset_registry.retrieve(config.io.dataset_id)
             train_dataset = dataset.from_train_entry_config(
                 config=config,
                 mode=ModelMode.TRAIN,
@@ -362,18 +362,18 @@ def train_mblm(config: TrainEntryConfig) -> None:
 
 class MaskedTrainer(
     CoreTrainer[
-        MaskedMBLM, BatchMaskedForMLM, TrainMaskedMBLMParams, TrainMaskedConfig, CoreIoConfig
+        MBLMEncoder, BatchMaskedForMLM, TrainMaskedMBLMParams, TrainMaskedConfig, CoreIoConfig
     ]
 ):
     def init_model(self):
-        return MaskedMBLM(
-            MaskedMBLMModelConfig(
+        return MBLMEncoder(
+            MBLMEncoderModelConfig(
                 mask_token_id=self.config.params.mask_token_id,
                 mblm_config=self.config.params.mblm_config,
             )
         )
 
-    def model_forward(self, model: MaskedMBLM, batch: BatchMaskedForMLM, device) -> torch.Tensor:
+    def model_forward(self, model: MBLMEncoder, batch: BatchMaskedForMLM, device) -> torch.Tensor:
         tokens_masked, mask, labels = batch
         inputs = tokens_masked.to(device)
         mask = mask.to(device)

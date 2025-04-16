@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 __copyright__ = """MIT License
 
 Copyright (c) 2025 - IBM Research
@@ -22,36 +20,23 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
 
-import os
+from __future__ import annotations
+
+import pathlib
 import random
 from pathlib import Path
 from typing import TYPE_CHECKING, Generator
 
 import torch
 import tqdm
-from pydantic import BaseModel
 from typing_extensions import Unpack
 
 from mblm.data.datasets import DistributedDataset, DistributedDatasetConfig
 from mblm.data.types import BatchMaskedForMLM, ModelMode
 from mblm.data.utils import Bytes
 
-# from mblm.train.mblm import masked_dataset_registry
-
 if TYPE_CHECKING:
     from mblm.train.mblm import TrainMaskedEntryConfig
-
-
-class PG19ModelGeneration(BaseModel):
-    id_model: str
-    book_id: str
-    book_txt_offset: int
-    ctx_len: int
-    generated: list[int]
-    truth: list[int]
-    ce: float
-    generation_time: float
-    timestamp: str
 
 
 # @masked_dataset_registry.register("maskedPG19")
@@ -87,7 +72,7 @@ class PG19Masked(DistributedDataset[BatchMaskedForMLM]):
             data_path = root / "validation"
         else:
             data_path = root / mode.value
-        self.txt_files = [data_path / file for file in os.listdir(data_path)]
+        self.txt_files = [file for file in pathlib.Path.iterdir(data_path)]
         self.masking_proba = masking_proba
         data_buff = bytearray()
         for file in tqdm.tqdm(
@@ -122,6 +107,7 @@ class PG19Masked(DistributedDataset[BatchMaskedForMLM]):
             masking_proba=config.train.masking_proba,
             masked_token_id=config.params.mask_token_id,
             mode=mode,
+            padding_token_id=config.params.mblm_config.pad_token_id,
             seq_len=config.params.input_seq_len,
             worker_id=worker_id,
             num_workers=num_workers,

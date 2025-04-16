@@ -117,6 +117,6 @@ class MBLMModelConfig(BaseModel):
         return list(repeat(self.block, len(self.hidden_dims)))
 
 
-class MaskedMBLMModelConfig(BaseModel):
+class MBLMEncoderModelConfig(BaseModel):
     mask_token_id: int
     mblm_config: MBLMModelConfig
