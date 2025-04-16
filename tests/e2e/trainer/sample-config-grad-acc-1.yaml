@@ -1,7 +1,7 @@
 io:
   name_model: my-model
   output_dir: tests/e2e/trainer/outputs # static
-  num_models_to_save: 2
+  num_models_to_save: 0
   validate_amount: 10
   log_train_loss_amount: 20
   description: >-

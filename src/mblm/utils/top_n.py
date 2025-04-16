@@ -40,7 +40,7 @@ class TopN(Generic[_T]):
     with the first element being the smallest. A max heap can be specified via `top_largest`.
 
     Args:
-        n (int): Max number of items to store
+        n (int): Max number of items to store. If zero this class is a no-op
         deep_copy (bool = `False`): Create a deep copy of elements
         top_largest (bool = `False`): If true, store the `n` largest items instead of
             the smallest items
@@ -77,6 +77,8 @@ class TopN(Generic[_T]):
         Add an item to the queue. The first tuple entry is used to
         determine the position of the newly added element
         """
+        if self._max_heap_items == 0:
+            return
         val, data = item
         if self._deep_copy:
             data = copy.deepcopy(data)
