@@ -401,4 +401,4 @@ class Clevr(DistributedDataset[BatchWithLossMask]):
         DistributedDataset superclass.
         """
         q_i_q_a, loss_mask, _ = self.get_sample_with_parts(from_idx)
-        return q_i_q_a, loss_mask
+        return q_i_q_a, loss_mask  #

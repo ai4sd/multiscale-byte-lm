@@ -34,17 +34,19 @@ from pydantic import (
 
 from mblm.model.block import StageBlock, StageBlockRegistry
 from mblm.model.mamba import MambaBlock
-from mblm.model.transformer import TransformerBlock
+from mblm.model.transformer import TransformerBlock, TransformerEncoderBlock
 
 block_registry = StageBlockRegistry()
 block_registry.register()(TransformerBlock)
 block_registry.register()(MambaBlock)
+block_registry.register()(TransformerEncoderBlock)
 
 
 class MBLMReturnType(str, Enum):
     LOGITS = auto()
     LOSS = auto()
     LOSS_LOGITS = auto()
+    HIDDEN_STATE = auto()
 
 
 class MBLMModelConfig(BaseModel):
@@ -113,3 +115,8 @@ class MBLMModelConfig(BaseModel):
         if isinstance(self.block, Sequence):
             return self.block
         return list(repeat(self.block, len(self.hidden_dims)))
+
+
+class MBLMEncoderModelConfig(BaseModel):
+    mask_token_id: int
+    mblm_config: MBLMModelConfig

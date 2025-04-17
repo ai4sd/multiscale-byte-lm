@@ -22,7 +22,7 @@ SOFTWARE."""
 
 import logging
 import math
-from typing import Iterable, Literal, Sequence, cast, overload
+from typing import Iterable, Literal, Optional, Sequence, cast, overload
 
 import torch
 import torch.nn.functional as F  # noqa: N812
@@ -33,7 +33,7 @@ from torch.utils.checkpoint import checkpoint
 from tqdm import tqdm
 
 from mblm.model.block import StageBlock
-from mblm.model.config import MBLMModelConfig, MBLMReturnType
+from mblm.model.config import MBLMEncoderModelConfig, MBLMModelConfig, MBLMReturnType
 from mblm.model.utils import RoPE, gumbel_sample, top_k
 from mblm.utils.stream import ByteStreamer
 
@@ -231,7 +231,9 @@ class MBLM(nn.Module):
         self,
         input_ids: torch.Tensor,
         *,
-        return_type: Literal[MBLMReturnType.LOSS, MBLMReturnType.LOGITS] = ...,
+        return_type: Literal[
+            MBLMReturnType.LOSS, MBLMReturnType.LOGITS, MBLMReturnType.HIDDEN_STATE
+        ] = ...,
         loss_mask: torch.Tensor | None = None,
     ) -> torch.Tensor: ...
 
@@ -425,6 +427,14 @@ class MBLM(nn.Module):
             # from (..., P_n, D_n) to (..., P_n, P_n+1, D_n+1)
             prev_stage_tokens_repr = proj(attended[..., :-1, :])
 
+        if return_type == MBLMReturnType.HIDDEN_STATE:
+            if flattened_dims:
+                # drop the start tokens and combine inner dimensions into one
+                attended = rearrange(attended[..., 1:, :], "b ... v -> b (...) v")
+                # remove the padding
+                attended = attended[:, :flat_seq_len]
+            return attended
+
         logits = self.to_logits.forward(attended)  # (B, P_1', P_2, ..., 1 + P_n, V)
 
         logits_out = logits
@@ -554,3 +564,46 @@ class MBLM(nn.Module):
         if stream is not None:
             stream.flush()
         return sequence.squeeze()
+
+
+class MBLMEncoder(nn.Module):
+    def __init__(self, config: MBLMEncoderModelConfig, **kwargs):
+        super().__init__(**kwargs)
+        self.mask_token_id = config.mask_token_id
+        self.mblm = MBLM(config.mblm_config)
+
+    def forward(
+        self,
+        masked_input_ids: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+        labels: Optional[torch.Tensor] = None,
+        return_type: MBLMReturnType = MBLMReturnType.HIDDEN_STATE,
+    ):
+        if return_type == MBLMReturnType.HIDDEN_STATE:
+            return self.mblm.forward(masked_input_ids, return_type=MBLMReturnType.HIDDEN_STATE)
+
+        logits = self.mblm.forward(masked_input_ids, return_type=MBLMReturnType.LOGITS)
+        if return_type == MBLMReturnType.LOGITS:
+            return logits
+        # ignore non mask token in the loss computation, this is used with the ignore_index parameter of cross_entropy
+        if mask is None or labels is None:
+            raise ValueError("Unable to compute the loss without a mask and labels")
+        assert (
+            mask.dtype == torch.bool
+        ), f"The mask tensor should should be of dtype bool, currently is {mask.dtype}"
+        assert (
+            mask.shape == labels.shape
+        ), f"mask and labels shape should be equivalent, but mask={mask.shape} and labels={labels.shape}"
+        labels[~mask] = self.mask_token_id
+        logits = rearrange(logits, "b s v -> b v s")
+        # target is Batch, Seq_len
+        loss = torch.nn.functional.cross_entropy(
+            input=logits, target=labels, ignore_index=self.mask_token_id
+        )
+
+        if return_type == MBLMReturnType.LOSS:
+            return loss
+        if return_type == MBLMReturnType.LOSS_LOGITS:
+            return loss, rearrange(logits, "b v s -> b s v")
+        else:
+            raise ValueError("New return type is not currently handled")

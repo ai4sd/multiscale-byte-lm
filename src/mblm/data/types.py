@@ -33,3 +33,4 @@ class ModelMode(Enum):
 
 
 BatchWithLossMask: TypeAlias = tuple[torch.Tensor, torch.Tensor]
+BatchMaskedForMLM: TypeAlias = tuple[torch.Tensor, torch.Tensor, torch.Tensor]

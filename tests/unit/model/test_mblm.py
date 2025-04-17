@@ -6,6 +6,9 @@ import pytest
 import torch
 
 from mblm import MBLM, MBLMModelConfig, MBLMReturnType, TransformerBlock
+from mblm.model.config import MBLMEncoderModelConfig
+from mblm.model.mblm import MBLMEncoder
+from mblm.model.transformer import TransformerEncoderBlock
 from mblm.utils.seed import seed_everything
 from mblm.utils.stream import ByteStreamer
 
@@ -108,3 +111,157 @@ class TestMBLM:
             generate(stream=stream, filter_thres=1)
 
         assert len(buff.getbuffer()) == total_generation_len
+
+
+class TestMaskedMBLM:
+    # padding + mask token
+    num_tokens = 256 + 2
+    mask_token_id = 257
+    pad_token_id = 256
+    num_attn_heads = 16
+    dim_attn_heads = 64
+    ff_mult = 4
+    dropout = 0
+    use_rot_emb = True
+    use_flash_attn = False
+    mblm_conf = MBLMModelConfig(
+        num_tokens=300,
+        pad_token_id=299,
+        hidden_dims=[1024, 32],
+        seq_lens=[512, 128],
+        num_layers=[5, 1],
+        train_checkpoint_chunks=None,
+        block=[
+            TransformerEncoderBlock(
+                attn_head_dims=64,
+                attn_num_heads=16,
+                attn_use_rot_embs=True,
+                use_flash_attn=True,
+                pos_emb_type="fixed",
+            ),
+            TransformerEncoderBlock(
+                attn_head_dims=16,
+                attn_num_heads=4,
+                attn_use_rot_embs=True,
+                use_flash_attn=True,
+                pos_emb_type="fixed",
+            ),
+        ],
+    )
+
+    def test_masked_mblm_fully_masked_is_nan(
+        self,
+    ):
+        masked_model = MBLMEncoder(
+            MBLMEncoderModelConfig(mask_token_id=self.mask_token_id, mblm_config=self.mblm_conf)
+        )
+        input_len = int(torch.prod(torch.tensor(self.mblm_conf.seq_lens)).item())
+        input_ids = torch.randint(0, self.num_tokens, size=(1, input_len), dtype=torch.long)
+        masked_input = input_ids.clone()
+        mask = torch.zeros_like(input_ids)
+        mask = mask.to(torch.bool)
+        masked_input[mask] = self.mask_token_id
+        loss = masked_model.forward(masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS)
+        assert loss.isnan().item(), f"Got {loss.isnan().item()}"
+
+    def test_masked_mblm_partially_masked_is_float(
+        self,
+    ):
+        masked_model = MBLMEncoder(
+            MBLMEncoderModelConfig(mask_token_id=self.mask_token_id, mblm_config=self.mblm_conf)
+        )
+        input_len = int(torch.prod(torch.tensor(self.mblm_conf.seq_lens)).item())
+        input_ids = torch.randint(0, self.num_tokens, size=(1, input_len), dtype=torch.long)
+        masked_input = input_ids.clone()
+        mask = torch.rand_like(input_ids, dtype=torch.float) < 0.15
+        mask = mask.to(torch.bool)
+        masked_input[mask] = self.mask_token_id
+        loss = masked_model.forward(masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS)
+        assert loss.dtype == torch.float and loss.item() > 0.0
+
+    @pytest.mark.parametrize("batch", [1, 3])
+    def test_masked_mblm_return_type_shape(self, batch):
+        masked_model = MBLMEncoder(
+            MBLMEncoderModelConfig(mask_token_id=self.mask_token_id, mblm_config=self.mblm_conf)
+        )
+        input_len = int(torch.prod(torch.tensor(self.mblm_conf.seq_lens)).item())
+        input_ids = torch.randint(0, self.num_tokens, size=(batch, input_len), dtype=torch.long)
+        masked_input = input_ids.clone()
+        mask = torch.rand_like(input_ids, dtype=torch.float) < 0.15
+        mask = mask.to(torch.bool)
+        masked_input[mask] = self.mask_token_id
+        loss, logit = masked_model.forward(
+            masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS_LOGITS
+        )
+        hidden_state = masked_model.forward(
+            masked_input, mask, input_ids, return_type=MBLMReturnType.HIDDEN_STATE
+        )
+        assert loss.size() == torch.Size([])
+        assert logit.size() == torch.Size([batch, input_len, self.mblm_conf.num_tokens])
+        assert hidden_state.size() == torch.Size([batch, input_len, self.mblm_conf.hidden_dims[-1]])
+
+    @pytest.mark.parametrize("batch", [1, 3])
+    def test_masked_mblm_combined_return(self, batch):
+        masked_model = MBLMEncoder(
+            MBLMEncoderModelConfig(mask_token_id=self.mask_token_id, mblm_config=self.mblm_conf)
+        )
+        input_len = int(torch.prod(torch.tensor(self.mblm_conf.seq_lens)).item())
+        input_ids = torch.randint(0, self.num_tokens, size=(batch, input_len), dtype=torch.long)
+        masked_input = input_ids.clone()
+        mask = torch.rand_like(input_ids, dtype=torch.float) < 0.15
+        mask = mask.to(torch.bool)
+        masked_input[mask] = self.mask_token_id
+        loss, logits = masked_model.forward(
+            masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS_LOGITS
+        )
+        loss_only = masked_model.forward(
+            masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS
+        )
+        logits_only = masked_model.forward(
+            masked_input, mask, input_ids, return_type=MBLMReturnType.LOGITS
+        )
+        assert logits.shape == logits_only.shape
+        assert loss.shape == loss_only.shape
+        assert torch.isclose(loss, loss_only), f"{loss.item()} is not close to {loss_only.item()}"
+        assert torch.all(logits == logits_only), f"{logits} does not equal  {logits_only}"
+
+    @pytest.mark.parametrize("batch", [1, 3])
+    def test_masked_mblm_input_seq_len(self, batch):
+        max_input_length = int(torch.prod(torch.tensor(self.mblm_conf.seq_lens)).item())
+        for current_input_len in [
+            max_input_length // 2,
+            max_input_length // 4,
+            max_input_length + 1,
+        ]:
+            masked_model = MBLMEncoder(
+                MBLMEncoderModelConfig(mask_token_id=self.mask_token_id, mblm_config=self.mblm_conf)
+            )
+            input_ids = torch.randint(
+                0, self.num_tokens, size=(batch, current_input_len), dtype=torch.long
+            )
+            masked_input = input_ids.clone()
+            mask = torch.rand_like(input_ids, dtype=torch.float) < 0.15
+            mask = mask.to(torch.bool)
+            masked_input[mask] = self.mask_token_id
+            # Each time the sequence length is too big we fail
+            if current_input_len > max_input_length:
+                with pytest.raises(AssertionError):
+                    masked_model.forward(
+                        masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS_LOGITS
+                    )
+            else:
+                loss, logits = masked_model.forward(
+                    masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS_LOGITS
+                )
+                loss_only = masked_model.forward(
+                    masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS
+                )
+                logits_only = masked_model.forward(
+                    masked_input, mask, input_ids, return_type=MBLMReturnType.LOGITS
+                )
+            assert logits.shape == logits_only.shape
+            assert loss.shape == loss_only.shape
+            assert torch.isclose(
+                loss, loss_only
+            ), f"{loss.item()} is not close to {loss_only.item()}"
+            assert torch.all(logits == logits_only), f"{logits} does not equal  {logits_only}"
