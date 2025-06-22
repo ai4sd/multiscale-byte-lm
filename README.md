@@ -545,10 +545,10 @@ Note that:
 ## Citation
 
 ```bibtex
-@misc{egli2025multiscalebytelanguagemodels,
+@inproceedings{egli2025multiscalebytelanguagemodels,
       title={Multiscale Byte Language Models - A Hierarchical Architecture for Causal Million-Length Sequence Modeling},
       author={Eric Egli and Matteo Manica and Jannis Born},
-      journal={arXiv preprint arXiv:2502.14553},
+      booktitle={ICML 2025 Workshop on Long-Context Foundation Models},
       year={2025},
       url={https://arxiv.org/abs/2502.14553},
 }
