@@ -237,6 +237,9 @@ class MBLM(nn.Module):
                 By default, not providing a `loss_mask` is equivalent to a `loss_mask`
                 consisting of all 1
         """
+        if (input_ids is None) == (inputs_embeds is None):
+            raise ValueError("Pass exactly one of input_ids or inputs_embeds.")
+
         if input_ids is not None:
             device = input_ids.device
             batch_size = input_ids.shape[0]
