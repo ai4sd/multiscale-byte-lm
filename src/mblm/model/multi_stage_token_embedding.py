@@ -76,7 +76,7 @@ class _StageTokenEmbedding(nn.Module):
             if self.model_dim is None:
                 raise ValueError("model_dim must be provided for global stages.")
             flat_dim = self.patch_size * self.local_dim
-            self._post = nn.Sequential(
+            self._post = nn.Sequential( # type: ignore
                 Rearrange("... r d -> ... (r d)"),
                 nn.LayerNorm(flat_dim),
                 nn.Linear(flat_dim, self.model_dim),

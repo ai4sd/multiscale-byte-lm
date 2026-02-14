@@ -288,7 +288,7 @@ class MBLM(nn.Module):
                     f"the input sequence length ({_P_1_prime}) "
                     f"must be less than the first tuple element of seq_lens ({_P_1})"
                 )
-        else:
+        elif inputs_embeds is not None:
             device = inputs_embeds.device
             flattened_dims = False
             if return_type != MBLMReturnType.HIDDEN_STATE:
@@ -493,8 +493,8 @@ class MBLM(nn.Module):
         # (ensured by the datasets/dataloaders) as well as patch-padding
         # (ensured by bootstrapping MBLM with the right pad token id)
         loss_tensor: torch.Tensor = F.cross_entropy(
-            preds,  # (B, V, L)
-            targets,  # (B, L)
+            preds,
+            targets,  # type: ignore
             ignore_index=self.pad_token_id,
             reduction="none",
         )
