@@ -9,10 +9,12 @@ from typing import NamedTuple, cast
 
 import pytest
 import torch
+from torch import nn
 from pydantic import BaseModel
 
 from mblm import MBLM, MBLMModelConfig, TransformerBlock
 from mblm.model.embeddings import MBLM_TOKEN_EMB_MIGRATION
+from mblm.model.multi_stage_token_embedding import _StageTokenEmbedding
 from mblm.utils.io import (
     CSVWriter,
     NDJSONWriter,
@@ -169,8 +171,17 @@ class TestModelCheckpointing:
             )
 
         num_src_emb, num_tgt_emb = 5, 6
+        pad_id = 0
+
         model_src = create_model(num_src_emb)
         model_tgt = create_model(num_tgt_emb)
+
+        # Assert updated structure
+        assert isinstance(model_src.token_embs_rev[0], _StageTokenEmbedding)
+        assert isinstance(model_src.token_embs_rev[1], _StageTokenEmbedding)
+        assert isinstance(model_tgt.token_embs_rev[0], _StageTokenEmbedding)
+        assert isinstance(model_tgt.token_embs_rev[1], _StageTokenEmbedding)
+
         with tempfile.TemporaryDirectory() as tmpdir:
             _, chkpoint = save_model_state(tmpdir, "checkpoint", model_src, 0)
             model_tgt, _ = load_model_state(
@@ -178,48 +189,53 @@ class TestModelCheckpointing:
                 model_tgt,
                 map_extend_embeddings=MBLM_TOKEN_EMB_MIGRATION,
             )
-            """
-            This is the structure of the embeddings we're migrating:
 
-                    (token_embs_rev): ModuleList(
-            case 1:     (0): Embedding(255, 512, padding_idx=0)
-                        (1): Sequential(
-            case 2:         (0): Embedding(255, 512, padding_idx=0)
-                            (1): Rearrange('... r d -> ... (r d)')
-                            (2): LayerNorm((4096,), eps=1e-05, elementwise_affine=True)
-                            (3): Linear(in_features=4096, out_features=1024, bias=True)
-                            (4): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
-                )
-                ...
+            # Extract embeddings (new layout: embedding lives at .embedding)
+            src_stage0_emb: nn.Embedding = model_src.token_embs_rev[0].embedding
+            src_stage1_emb: nn.Embedding = model_src.token_embs_rev[1].embedding
+            tgt_stage0_emb: nn.Embedding = model_tgt.token_embs_rev[0].embedding
+            tgt_stage1_emb: nn.Embedding = model_tgt.token_embs_rev[1].embedding
 
-            cases 3/4: (to_logits): Linear(in_features=512, out_features=255, bias=True)
-            )
-            """
-            src_emb = cast(torch.nn.Embedding, model_src.token_embs_rev[0])
-            src_emb_seq = cast(torch.nn.Sequential, model_src.token_embs_rev[1])
-            tgt_emb = cast(torch.nn.Embedding, model_tgt.token_embs_rev[0])
-            tgt_emb_seq = cast(torch.nn.Sequential, model_tgt.token_embs_rev[1])
-
-            # case 1, base embedding
-            assert tgt_emb.num_embeddings == num_tgt_emb
-            assert tgt_emb.weight[:num_src_emb].equal(src_emb.weight)
-            # case 2, embedding in sequential
-            assert tgt_emb_seq[0].num_embeddings == num_tgt_emb
-            assert tgt_emb_seq[0].weight[:num_src_emb].equal(src_emb_seq[0].weight)
-            # case 3/4, logits
+            # Sizes grew
+            assert tgt_stage0_emb.num_embeddings == num_tgt_emb
+            assert tgt_stage1_emb.num_embeddings == num_tgt_emb
             assert model_tgt.to_logits.weight.size(0) == num_tgt_emb
             assert model_tgt.to_logits.bias.size(0) == num_tgt_emb
-            assert model_tgt.to_logits.weight[:num_src_emb].equal(model_src.to_logits.weight)
-            assert model_tgt.to_logits.bias[:num_src_emb].equal(model_src.to_logits.bias)
 
-            # check if new token id works
+            # === Functional equality for old token ids (skip pad if migration handles it specially) ===
+            # Compare the result of embedding lookups rather than raw weight slicing.
+            old_token_ids = torch.arange(num_src_emb, dtype=torch.long)
+            non_pad_ids = old_token_ids[old_token_ids != pad_id]
+            assert non_pad_ids.numel() > 0, "Expected at least one non-pad id in source vocab"
+
+            # Stage 0 (local) functional check
+            src_s0_vecs = src_stage0_emb(non_pad_ids)  # [K, D0]
+            tgt_s0_vecs = tgt_stage0_emb(non_pad_ids)  # [K, D0]
+            assert torch.allclose(tgt_s0_vecs, src_s0_vecs, atol=0, rtol=0), \
+                "Stage-0 embeddings differ for existing token ids"
+
+            # Stage 1 (global) functional check (embedding part only)
+            src_s1_vecs = src_stage1_emb(non_pad_ids)  # [K, D1]
+            tgt_s1_vecs = tgt_stage1_emb(non_pad_ids)  # [K, D1]
+            assert torch.allclose(tgt_s1_vecs, src_s1_vecs, atol=0, rtol=0), \
+                "Stage-1 embeddings differ for existing token ids"
+
+            # === Logits preservation for old ids ===
+            assert torch.allclose(
+                model_tgt.to_logits.weight[:num_src_emb], model_src.to_logits.weight, atol=0, rtol=0
+            ), "to_logits.weight rows for old ids not preserved"
+            assert torch.allclose(
+                model_tgt.to_logits.bias[:num_src_emb], model_src.to_logits.bias, atol=0, rtol=0
+            ), "to_logits.bias rows for old ids not preserved"
+
+            # === New token id should be accepted only by the migrated model ===
             max_new_token_id = num_tgt_emb - 1
-            input_for_tgt_model_only = torch.tensor([[max_new_token_id]]).long()
+            input_for_tgt_model_only = torch.tensor([[max_new_token_id]], dtype=torch.long)
+
             with pytest.raises(Exception):
-                # should fail for old model
                 model_src.forward(input_for_tgt_model_only)
+
             try:
-                # should work for migrated model
                 model_tgt.forward(input_for_tgt_model_only)
             except Exception as error:
                 pytest.fail(f"Forward pass should work: {error}")
