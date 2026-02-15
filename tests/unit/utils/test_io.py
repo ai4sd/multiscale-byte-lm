@@ -5,12 +5,12 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import NamedTuple, cast
+from typing import NamedTuple
 
 import pytest
 import torch
-from torch import nn
 from pydantic import BaseModel
+from torch import nn
 
 from mblm import MBLM, MBLMModelConfig, TransformerBlock
 from mblm.model.embeddings import MBLM_TOKEN_EMB_MIGRATION
@@ -211,14 +211,16 @@ class TestModelCheckpointing:
             # Stage 0 (local) functional check
             src_s0_vecs = src_stage0_emb(non_pad_ids)  # [K, D0]
             tgt_s0_vecs = tgt_stage0_emb(non_pad_ids)  # [K, D0]
-            assert torch.allclose(tgt_s0_vecs, src_s0_vecs, atol=0, rtol=0), \
-                "Stage-0 embeddings differ for existing token ids"
+            assert torch.allclose(
+                tgt_s0_vecs, src_s0_vecs, atol=0, rtol=0
+            ), "Stage-0 embeddings differ for existing token ids"
 
             # Stage 1 (global) functional check (embedding part only)
             src_s1_vecs = src_stage1_emb(non_pad_ids)  # [K, D1]
             tgt_s1_vecs = tgt_stage1_emb(non_pad_ids)  # [K, D1]
-            assert torch.allclose(tgt_s1_vecs, src_s1_vecs, atol=0, rtol=0), \
-                "Stage-1 embeddings differ for existing token ids"
+            assert torch.allclose(
+                tgt_s1_vecs, src_s1_vecs, atol=0, rtol=0
+            ), "Stage-1 embeddings differ for existing token ids"
 
             # === Logits preservation for old ids ===
             assert torch.allclose(
