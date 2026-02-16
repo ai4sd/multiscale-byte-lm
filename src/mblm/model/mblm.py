@@ -102,6 +102,8 @@ class MBLM(nn.Module):
 
         self.to_logits = nn.Linear(cfg.hidden_dims[-1], cfg.num_tokens)
 
+        self._warned_single_tensor_embeds: bool = False
+
     @classmethod
     def _init_positional_embeddings(
         cls,
@@ -191,7 +193,7 @@ class MBLM(nn.Module):
     def forward(
         self,
         input_ids: Optional[torch.Tensor] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor | Sequence[torch.Tensor]] = None,
         return_type: Literal[MBLMReturnType.LOSS_LOGITS] = ...,
         loss_mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]: ...
@@ -199,7 +201,7 @@ class MBLM(nn.Module):
     def forward(
         self,
         input_ids: Optional[torch.Tensor] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor | Sequence[torch.Tensor]] = None,
         return_type: Literal[
             MBLMReturnType.LOSS, MBLMReturnType.LOGITS, MBLMReturnType.HIDDEN_STATE
         ] = ...,
@@ -209,7 +211,7 @@ class MBLM(nn.Module):
     def forward(
         self,
         input_ids: Optional[torch.Tensor] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor | Sequence[torch.Tensor]] = None,
         return_type: MBLMReturnType = MBLMReturnType.LOSS,
         loss_mask: torch.Tensor | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
@@ -218,12 +220,16 @@ class MBLM(nn.Module):
 
         Args:
             input_ids: The token ids as torch.LongTensor in shape (B, L).
-            inputs_embeds: Precomputed embeddings as float tensor. Must be mutually exclusive
-                with input_ids. The tensor must already be fully padded and reshaped according
-                to the model's multi‑stage hierarchy. In multi‑stage setups, callers must supply
-                embeddings pre‑organized into: (B, P1', P2, ..., Pn, Dn), where P1', ..., Pn
-                follow the sequence lengths of each stage after padding. For single‑stage models,
-                the expected shape is simply: (B, L, D).
+            inputs_embeds: Precomputed embeddings as float tensor or sequence of tensors.
+                Must be mutually exclusive with input_ids. Can be either:
+                - Single tensor: Will be reused across all stages (bypasses embedding lookups).
+                    The tensor must be pre-organized into the hierarchical structure:
+                    (B, P1', P2, ..., Pn, Dn) for multi-stage or (B, L, D) for single-stage.
+                    NOTE: This will produce different results than input_ids because each stage
+                    has its own embedding table.
+                - Sequence of tensors: One tensor per stage (in reverse order: local to global).
+                  This allows exact replication of the input_ids path.
+                  Expected shapes: [local_embs (B, P1', P2, ..., Pn, Dn), ..., global_embs (B, P1', D1)]
             return_type: What to return - the loss, the logits or both.
             loss_mask: An optional masking tensor that enables interpolation between
                 self-supervised and supervised learning. It determines which tokens in the
@@ -239,6 +245,8 @@ class MBLM(nn.Module):
         """
         if (input_ids is None) == (inputs_embeds is None):
             raise ValueError("Pass exactly one of input_ids or inputs_embeds.")
+
+        embeds_list: Optional[Sequence[torch.Tensor]] = None
 
         if input_ids is not None:
             device = input_ids.device
@@ -289,41 +297,84 @@ class MBLM(nn.Module):
                     f"must be less than the first tuple element of seq_lens ({_P_1})"
                 )
         elif inputs_embeds is not None:
-            device = inputs_embeds.device
             flattened_dims = False
             if return_type != MBLMReturnType.HIDDEN_STATE:
                 raise ValueError(
                     f"Forward pass with return type {return_type} has not been tested and is not supported "
                     f"when providing `inputs_embeds`."
                 )
-            assert inputs_embeds.ndim == self.num_stages + 2, (
-                f"`inputs_embeds` must be nested with {self.num_stages} hierarchy dims "
-                f"(B + P1'..Pn + D), got shape {tuple(inputs_embeds.shape)}"
-            )
-            final_hidden_dim = self.start_tokens[-1].numel()
-            assert inputs_embeds.shape[-1] == final_hidden_dim, (
-                f"Last dim of `inputs_embeds` must equal final hidden dim ({final_hidden_dim}), "
-                f"got {inputs_embeds.shape[-1]}"
-            )
-            # Inner hierarchy dims must match config exactly
-            for k, expected in enumerate(self.seq_lens[1:], start=2):
-                got = inputs_embeds.shape[k]
-                assert (
-                    got == expected
-                ), f"`inputs_embeds` inner dim at stage {k - 1} must be {expected}, got {got}"
-            # Global fixed pos-emb requires P1' <= P1
-            if isinstance(self.pos_embs[0], nn.Embedding):
-                assert inputs_embeds.shape[1] <= self.seq_lens[0], (
-                    f"With fixed global positional embedding, P1'={inputs_embeds.shape[1]} must "
-                    f"be <= P1={self.seq_lens[0]}"
+
+            # Check if inputs_embeds is a sequence of tensors or a single tensor
+            is_sequence = isinstance(inputs_embeds, (list, tuple))
+
+            if is_sequence:
+                # Sequence of tensors: one per stage (in reverse order: local to global)
+                # Type narrowing: we know inputs_embeds is a Sequence here
+                inputs_embeds_seq: Sequence[torch.Tensor] = cast(
+                    Sequence[torch.Tensor], inputs_embeds
                 )
+                assert len(inputs_embeds_seq) == self.num_stages, (
+                    f"`inputs_embeds` sequence must have {self.num_stages} tensors (one per stage), "
+                    f"got {len(inputs_embeds_seq)}"
+                )
+                # Validate each tensor in the sequence
+                device = inputs_embeds_seq[0].device
+                for stage_idx, stage_embeds in enumerate(inputs_embeds_seq):
+                    assert isinstance(
+                        stage_embeds, torch.Tensor
+                    ), f"`inputs_embeds[{stage_idx}]` must be a torch.Tensor"
+                    assert (
+                        stage_embeds.device == device
+                    ), "All tensors in `inputs_embeds` must be on the same device"
+
+                embeds_list = inputs_embeds_seq
+            else:
+                # Single tensor: will be reused across all stages
+                # Type narrowing: we know inputs_embeds is a Tensor here
+                inputs_embeds_single = cast(torch.Tensor, inputs_embeds)
+                device = inputs_embeds_single.device
+
+                # Warn once per instance that single tensor cannot reproduce input_ids results
+                if not self._warned_single_tensor_embeds and self.num_stages > 1:
+                    import warnings
+
+                    warnings.warn(
+                        "Passing a single tensor to `inputs_embeds` bypasses per-stage embedding tables "
+                        "and cannot fully reproduce the results of passing `input_ids`. "
+                        "For exact consistency, pass a sequence of tensors (one per stage) instead.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                    self._warned_single_tensor_embeds = True
+
+                assert inputs_embeds_single.ndim == self.num_stages + 2, (
+                    f"`inputs_embeds` must be nested with {self.num_stages} hierarchy dims "
+                    f"(B + P1'..Pn + D), got shape {tuple(inputs_embeds_single.shape)}"
+                )
+                final_hidden_dim = self.start_tokens[-1].numel()
+                assert inputs_embeds_single.shape[-1] == final_hidden_dim, (
+                    f"Last dim of `inputs_embeds` must equal final hidden dim ({final_hidden_dim}), "
+                    f"got {inputs_embeds_single.shape[-1]}"
+                )
+                # Inner hierarchy dims must match config exactly
+                for k, expected in enumerate(self.seq_lens[1:], start=2):
+                    got = inputs_embeds_single.shape[k]
+                    assert (
+                        got == expected
+                    ), f"`inputs_embeds` inner dim at stage {k - 1} must be {expected}, got {got}"
+                # Global fixed pos-emb requires P1' <= P1
+                if isinstance(self.pos_embs[0], nn.Embedding):
+                    assert inputs_embeds_single.shape[1] <= self.seq_lens[0], (
+                        f"With fixed global positional embedding, P1'={inputs_embeds_single.shape[1]} must "
+                        f"be <= P1={self.seq_lens[0]}"
+                    )
             # `flat_seq_len` is irrelevant in this branch (we do not compute loss/logits)
             flat_seq_len = 0  # keep a defined name for readability
 
         token_embs_at_stages = [torch.empty(0) for _ in range(self.num_stages)]
 
         ids_buf = input_ids
-        embeds_buf = inputs_embeds
+        embeds_buf = inputs_embeds if inputs_embeds is not None and not is_sequence else None
 
         # at this stage, we're working with nested ids - hence, embed the bytes
         # for each stage in reverse order, starting from the local and ending at
@@ -339,7 +390,13 @@ class MBLM(nn.Module):
             reversed(self.pos_embs),
             self.token_embs_rev,
         ):
-            stage_token_embs: torch.Tensor = token_emb(ids_buf, embeds_buf)
+            # If we have a sequence of embeddings, use them directly (they're already embedded+projected)
+            if embeds_list is not None:
+                # embeds_list is in reverse order (local to global), matching stage_idx iteration
+                stage_token_embs = embeds_list[self.num_stages - 1 - stage_idx]
+            else:
+                # Normal path: embed the ids or embeds_buf
+                stage_token_embs = token_emb(ids_buf, embeds_buf)
             stage_seq_len = stage_token_embs.shape[-2]
             if isinstance(pos_emb, nn.Embedding):
                 positions: torch.Tensor = pos_emb(
@@ -363,8 +420,9 @@ class MBLM(nn.Module):
 
             if ids_buf is not None:
                 ids_buf = rearrange(ids_buf, "... m n -> ... (m n)")
-            else:
-                embeds_buf = rearrange(embeds_buf, "... m n d -> ... (m n) d")
+            elif embeds_list is None:
+                # Only rearrange embeds_buf if we're using a single tensor (not a sequence)
+                embeds_buf = rearrange(embeds_buf, "... m n d -> ... (m n) d")  # type: ignore
 
         # initials
         prev_stage_tokens_repr: torch.Tensor | None = None

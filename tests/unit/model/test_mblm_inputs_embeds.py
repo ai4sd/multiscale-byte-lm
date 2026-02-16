@@ -125,9 +125,9 @@ class TestMBLMInputsEmbeds:
         with torch.no_grad():
             out = mblm.forward(inputs_embeds=nested, return_type=MBLMReturnType.HIDDEN_STATE)
 
-        assert out.shape == torch.Size([batch_size, 1 + seq_len, dim_n]), (
-            f"got {out.shape}, expected {(batch_size, 1 + seq_len, dim_n)}"
-        )
+        assert out.shape == torch.Size(
+            [batch_size, 1 + seq_len, dim_n]
+        ), f"got {out.shape}, expected {(batch_size, 1 + seq_len, dim_n)}"
 
     def test_encoder_hidden_state_matches_mblm_single_stage(self):
         """
@@ -177,9 +177,9 @@ class TestMBLMInputsEmbeds:
             )
 
         assert h_mblm.shape == h_encoder.shape
-        assert torch.allclose(h_mblm, h_encoder, atol=1e-5), (
-            "Encoder hidden states differ from MBLM after syncing weights"
-        )
+        assert torch.allclose(
+            h_mblm, h_encoder, atol=1e-5
+        ), "Encoder hidden states differ from MBLM after syncing weights"
 
     def test_inputs_embeds_nested_multistage(self):
         """
@@ -246,18 +246,30 @@ class TestMBLMInputsEmbeds:
                 return_type=MBLMReturnType.HIDDEN_STATE,
             )
 
-        # 2) Compute local inputs_embeds exactly as forward(local stage) would:
-        # local stage embedding is token_embs_rev[0], called on NESTED ids
-        local_token_emb = mblm.token_embs_rev[0]
+        # 2) Compute inputs_embeds for ALL stages exactly as forward would:
         with torch.no_grad():
-            local_inputs_embeds = local_token_emb(
-                input_ids_nested, None
-            )  # (B, p1_prime, p2, ..., pn, Dn)
+            inputs_embeds_list = []
+            ids_buf = input_ids_nested
+            embeds_buf = None
 
-            # forward on inputs_embeds
+            # Process stages in reverse order (local to global), matching the forward loop
+            for stage_idx in range(len(seq_lens) - 1, -1, -1):
+                token_emb = mblm.token_embs_rev[len(seq_lens) - 1 - stage_idx]
+                # Compute embeddings for this stage
+                stage_embeds = token_emb(ids_buf, embeds_buf)
+                inputs_embeds_list.append(stage_embeds)
+
+                # Rearrange for next (more global) stage, except for the most local
+                if stage_idx < len(seq_lens) - 1:
+                    if ids_buf is not None:
+                        ids_buf = rearrange(ids_buf, "... m n -> ... (m n)")
+                    else:
+                        embeds_buf = rearrange(embeds_buf, "... m n d -> ... (m n) d")
+
+            # forward on inputs_embeds sequence
             h_embs = mblm.forward(
                 input_ids=None,
-                inputs_embeds=local_inputs_embeds,
+                inputs_embeds=inputs_embeds_list,
                 return_type=MBLMReturnType.HIDDEN_STATE,
             )
 
@@ -294,9 +306,9 @@ class TestMBLMInputsEmbeds:
         h_ids_flat = normalize_hidden(h_ids)
         h_embs_flat = normalize_hidden(h_embs)
 
-        assert h_ids_flat.shape == h_embs_flat.shape, (
-            f"Shape mismatch after normalization: ids={h_ids_flat.shape}, embeds={h_embs_flat.shape}"
-        )
-        assert torch.allclose(h_ids_flat, h_embs_flat, atol=1e-5), (
-            "Hidden states differ between ids and inputs_embeds paths after normalization"
-        )
+        assert (
+            h_ids_flat.shape == h_embs_flat.shape
+        ), f"Shape mismatch after normalization: ids={h_ids_flat.shape}, embeds={h_embs_flat.shape}"
+        assert torch.allclose(
+            h_ids_flat, h_embs_flat, atol=1e-5
+        ), "Hidden states differ between ids and inputs_embeds paths after normalization"
