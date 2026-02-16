@@ -44,12 +44,9 @@ def pad_and_reshape_inputs_embeds(
 
 class TestMBLMInputsEmbeds:
     """
-    Tests aligned with your style that focus on the inputs_embeds path.
-
     IMPORTANT: With the current implementation, inputs_embeds only works
     reliably for single-stage models. Multi-stage will attempt to rearrange
     `input_ids` even when `inputs_embeds` is provided, leading to a failure.
-    We mark that behavior as xfail below for documentation.
     """
 
     num_tokens = 256 + 1
@@ -77,7 +74,7 @@ class TestMBLMInputsEmbeds:
                         attn_dropout=self.dropout,
                         ff_multiplier=self.ff_mult,
                         ff_dropout=self.dropout,
-                        pos_emb_type="fixed",  # matches your suite
+                        pos_emb_type="fixed",
                         attn_use_rot_embs=self.use_rot_emb,
                         use_flash_attn=self.use_flash_attn,
                     )
@@ -209,8 +206,14 @@ class TestMBLMInputsEmbeds:
         nested, _, _ = pad_and_reshape_inputs_embeds(flat_embs, seq_lens)
 
         with torch.no_grad():
-            # This currently raises due to the rearrange(input_ids, ...) line in the implementation.
-            _ = mblm.forward(inputs_embeds=nested, return_type=MBLMReturnType.HIDDEN_STATE)
+            output = mblm.forward(inputs_embeds=nested, return_type=MBLMReturnType.HIDDEN_STATE)
+
+        assert output.shape == (
+            nested.shape[0],
+            nested.shape[1],
+            nested.shape[2] + 1,
+            model_dims[-1],
+        )
 
     # NOTE: Consistency test makes sense only for single-stage.
     @pytest.mark.parametrize(

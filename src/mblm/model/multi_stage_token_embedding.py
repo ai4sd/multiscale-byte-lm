@@ -150,7 +150,7 @@ class MultiStageTokenEmbedding:
     Factory that replicates the behavior of _init_token_embeddings but returns
     per-stage modules that accept both input_ids and inputs_embeds.
 
-    The returned ModuleList is in REVERSE order, identical to your current API.
+    The returned ModuleList is in REVERSE order.
     """
 
     @classmethod
