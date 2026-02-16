@@ -43,11 +43,7 @@ def pad_and_reshape_inputs_embeds(
 
 
 class TestMBLMInputsEmbeds:
-    """
-    IMPORTANT: With the current implementation, inputs_embeds only works
-    reliably for single-stage models. Multi-stage will attempt to rearrange
-    `input_ids` even when `inputs_embeds` is provided, leading to a failure.
-    """
+    """Test class."""
 
     num_tokens = 256 + 1
     pad_token_id = 256
@@ -85,8 +81,8 @@ class TestMBLMInputsEmbeds:
 
     def test_inputs_embeds_only_allows_hidden_state_single_stage(self):
         """
-        With single-stage models, inputs_embeds is supported BUT only with
-        return_type == HIDDEN_STATE. Other return types must raise.
+        Inputs_embeds is supported only with return_type == HIDDEN_STATE.
+        Other return types must raise.
         """
         model_dims = (64,)
         seq_lens = (9,)
@@ -129,9 +125,9 @@ class TestMBLMInputsEmbeds:
         with torch.no_grad():
             out = mblm.forward(inputs_embeds=nested, return_type=MBLMReturnType.HIDDEN_STATE)
 
-        assert out.shape == torch.Size(
-            [batch_size, 1 + seq_len, dim_n]
-        ), f"got {out.shape}, expected {(batch_size, 1 + seq_len, dim_n)}"
+        assert out.shape == torch.Size([batch_size, 1 + seq_len, dim_n]), (
+            f"got {out.shape}, expected {(batch_size, 1 + seq_len, dim_n)}"
+        )
 
     def test_encoder_hidden_state_matches_mblm_single_stage(self):
         """
@@ -181,15 +177,13 @@ class TestMBLMInputsEmbeds:
             )
 
         assert h_mblm.shape == h_encoder.shape
-        assert torch.allclose(
-            h_mblm, h_encoder, atol=1e-5
-        ), "Encoder hidden states differ from MBLM after syncing weights"
+        assert torch.allclose(h_mblm, h_encoder, atol=1e-5), (
+            "Encoder hidden states differ from MBLM after syncing weights"
+        )
 
-    def test_inputs_embeds_nested_multistage_currently_unsupported(self):
+    def test_inputs_embeds_nested_multistage(self):
         """
-        Document current limitation: even with correctly nested inputs_embeds,
-        multi-stage models fail because the implementation tries to
-        `rearrange(input_ids, ...)` when `input_ids is None`.
+        Test inputs_embeds with multistage model
         """
         model_dims = (128, 64)
         seq_lens = (5, 4)  # prod(inner)=4
@@ -215,12 +209,9 @@ class TestMBLMInputsEmbeds:
             model_dims[-1],
         )
 
-    # NOTE: Consistency test makes sense only for single-stage.
     @pytest.mark.parametrize(
         "model_dims, seq_lens",
-        [
-            ((64,), (9,)),  # single-stage
-        ],
+        [((64,), (9,)), ((128, 64), (5, 4))],
     )
     def test_ids_vs_inputs_embeds_consistency_end2end(self, model_dims, seq_lens):
         """
@@ -303,9 +294,9 @@ class TestMBLMInputsEmbeds:
         h_ids_flat = normalize_hidden(h_ids)
         h_embs_flat = normalize_hidden(h_embs)
 
-        assert (
-            h_ids_flat.shape == h_embs_flat.shape
-        ), f"Shape mismatch after normalization: ids={h_ids_flat.shape}, embeds={h_embs_flat.shape}"
-        assert torch.allclose(
-            h_ids_flat, h_embs_flat, atol=1e-5
-        ), "Hidden states differ between ids and inputs_embeds paths after normalization"
+        assert h_ids_flat.shape == h_embs_flat.shape, (
+            f"Shape mismatch after normalization: ids={h_ids_flat.shape}, embeds={h_embs_flat.shape}"
+        )
+        assert torch.allclose(h_ids_flat, h_embs_flat, atol=1e-5), (
+            "Hidden states differ between ids and inputs_embeds paths after normalization"
+        )
