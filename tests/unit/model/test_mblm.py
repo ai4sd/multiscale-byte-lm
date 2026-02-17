@@ -161,7 +161,9 @@ class TestMaskedMBLM:
         mask = torch.zeros_like(input_ids)
         mask = mask.to(torch.bool)
         masked_input[mask] = self.mask_token_id
-        loss = masked_model.forward(masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS)
+        loss = masked_model.forward(
+            masked_input, mask=mask, labels=input_ids, return_type=MBLMReturnType.LOSS
+        )
         assert loss.isnan().item(), f"Got {loss.isnan().item()}"
 
     def test_masked_mblm_partially_masked_is_float(
@@ -176,7 +178,9 @@ class TestMaskedMBLM:
         mask = torch.rand_like(input_ids, dtype=torch.float) < 0.15
         mask = mask.to(torch.bool)
         masked_input[mask] = self.mask_token_id
-        loss = masked_model.forward(masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS)
+        loss = masked_model.forward(
+            masked_input, mask=mask, labels=input_ids, return_type=MBLMReturnType.LOSS
+        )
         assert loss.dtype == torch.float and loss.item() > 0.0
 
     @pytest.mark.parametrize("batch", [1, 3])
@@ -191,10 +195,10 @@ class TestMaskedMBLM:
         mask = mask.to(torch.bool)
         masked_input[mask] = self.mask_token_id
         loss, logit = masked_model.forward(
-            masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS_LOGITS
+            masked_input, mask=mask, labels=input_ids, return_type=MBLMReturnType.LOSS_LOGITS
         )
         hidden_state = masked_model.forward(
-            masked_input, mask, input_ids, return_type=MBLMReturnType.HIDDEN_STATE
+            masked_input, mask=mask, labels=input_ids, return_type=MBLMReturnType.HIDDEN_STATE
         )
         assert loss.size() == torch.Size([])
         assert logit.size() == torch.Size([batch, input_len, self.mblm_conf.num_tokens])
@@ -212,13 +216,13 @@ class TestMaskedMBLM:
         mask = mask.to(torch.bool)
         masked_input[mask] = self.mask_token_id
         loss, logits = masked_model.forward(
-            masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS_LOGITS
+            masked_input, mask=mask, labels=input_ids, return_type=MBLMReturnType.LOSS_LOGITS
         )
         loss_only = masked_model.forward(
-            masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS
+            masked_input, mask=mask, labels=input_ids, return_type=MBLMReturnType.LOSS
         )
         logits_only = masked_model.forward(
-            masked_input, mask, input_ids, return_type=MBLMReturnType.LOGITS
+            masked_input, mask=mask, labels=input_ids, return_type=MBLMReturnType.LOGITS
         )
         assert logits.shape == logits_only.shape
         assert loss.shape == loss_only.shape
@@ -247,17 +251,23 @@ class TestMaskedMBLM:
             if current_input_len > max_input_length:
                 with pytest.raises(AssertionError):
                     masked_model.forward(
-                        masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS_LOGITS
+                        masked_input,
+                        mask=mask,
+                        labels=input_ids,
+                        return_type=MBLMReturnType.LOSS_LOGITS,
                     )
             else:
                 loss, logits = masked_model.forward(
-                    masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS_LOGITS
+                    masked_input,
+                    mask=mask,
+                    labels=input_ids,
+                    return_type=MBLMReturnType.LOSS_LOGITS,
                 )
                 loss_only = masked_model.forward(
-                    masked_input, mask, input_ids, return_type=MBLMReturnType.LOSS
+                    masked_input, mask=mask, labels=input_ids, return_type=MBLMReturnType.LOSS
                 )
                 logits_only = masked_model.forward(
-                    masked_input, mask, input_ids, return_type=MBLMReturnType.LOGITS
+                    masked_input, mask=mask, labels=input_ids, return_type=MBLMReturnType.LOGITS
                 )
             assert logits.shape == logits_only.shape
             assert loss.shape == loss_only.shape

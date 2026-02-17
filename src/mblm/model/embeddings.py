@@ -22,8 +22,8 @@ SOFTWARE."""
 
 
 MBLM_TOKEN_EMB_MIGRATION: set[str] = {
-    "token_embs_rev.0.weight",
-    "token_embs_rev.1.0.weight",
+    "token_embs_rev.0.embedding.weight",
+    "token_embs_rev.1.embedding.weight",
     "to_logits.weight",
     "to_logits.bias",
 }
