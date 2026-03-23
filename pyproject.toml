@@ -27,7 +27,7 @@ classifiers = [
     "Typing :: Typed",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "einops>=0.8.0",
     "filelock>=3.16.1",
