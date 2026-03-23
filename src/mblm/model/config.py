@@ -20,10 +20,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
 
-from enum import Enum, auto
+from enum import Enum, StrEnum, auto
 from itertools import repeat
 from typing import Any, Sequence
-from enum import StrEnum
 
 from pydantic import (
     BaseModel,
@@ -117,9 +116,11 @@ class MBLMModelConfig(BaseModel):
             return self.block
         return list(repeat(self.block, len(self.hidden_dims)))
 
+
 class MaskReduceStrat(StrEnum):
     ANY: str = "any"
     ALL: str = "all"
+
 
 class MBLMEncoderModelConfig(BaseModel):
     mask_token_id: int

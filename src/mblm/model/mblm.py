@@ -1039,7 +1039,7 @@ class MBLMEncoder(nn.Module):
             stage_seq_len = self.seq_lens[stage_idx]
             stage_emb_tokens = token_embs_at_stages[stage_idx]
             model = self.stage_models[stage_idx]
-            checkpoint_chunk = self.checkpoint_chunks[stage_idx]
+            _ = self.checkpoint_chunks[stage_idx]  # noqa: F841
             proj = self.to_next_stage_proj[stage_idx]
             # for each stage n, going from global to local, pack the tokens into
             # a new tensor so that the last two dimensions correspond to the
