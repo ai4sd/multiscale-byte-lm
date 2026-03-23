@@ -1,6 +1,6 @@
 language: python
 python: # TODO: Run on more versions
-  - '3.10'
+  - '3.11'
 
 branches:
   only:
