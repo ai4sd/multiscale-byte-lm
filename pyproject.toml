@@ -31,6 +31,7 @@ requires-python = ">=3.10"
 dependencies = [
     "einops>=0.8.0",
     "filelock>=3.16.1",
+    "ipykernel>=6.29.5",
     "mambapy>=1.2.0",
     "megabyte-pytorch>=0.3.6",
     "numpy>=2.1.1",
@@ -38,6 +39,7 @@ dependencies = [
     "pydantic>=2.9.2",
     "pyyaml>=6.0.2",
     "tqdm>=4.66.5",
+    "transformers>=5.3.0",
 ]
 
 [project.urls]
@@ -96,7 +98,6 @@ addopts = [
     "--import-mode=importlib",
     "--cov-report=html:.coverage_html",
     "--cov-report=term-missing",
-    "--cov=mblm",
 ]
 filterwarnings = ["ignore::UserWarning:mblm.model.mamba_shim"]
 

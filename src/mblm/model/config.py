@@ -23,6 +23,7 @@ SOFTWARE."""
 from enum import Enum, auto
 from itertools import repeat
 from typing import Any, Sequence
+from enum import StrEnum
 
 from pydantic import (
     BaseModel,
@@ -116,7 +117,11 @@ class MBLMModelConfig(BaseModel):
             return self.block
         return list(repeat(self.block, len(self.hidden_dims)))
 
+class MaskReduceStrat(StrEnum):
+    ANY: str = "any"
+    ALL: str = "all"
 
 class MBLMEncoderModelConfig(BaseModel):
     mask_token_id: int
     mblm_config: MBLMModelConfig
+    mask_reduce_strat: MaskReduceStrat = MaskReduceStrat.ANY

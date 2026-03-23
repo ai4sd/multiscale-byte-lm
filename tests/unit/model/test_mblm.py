@@ -11,7 +11,7 @@ from mblm.model.mblm import MBLMEncoder
 from mblm.model.transformer import TransformerEncoderBlock
 from mblm.utils.seed import seed_everything
 from mblm.utils.stream import ByteStreamer
-
+from typing import List
 
 class TestMBLM:
     num_tokens = 256 + 1
@@ -149,13 +149,42 @@ class TestMaskedMBLM:
         ],
     )
 
-    def test_masked_mblm_fully_masked_is_nan(
+    def _extend_or_shrink(self,values:List,wanted_size:int):
+        return (values + [values[-1]] * max(0, wanted_size - len(values)))[:wanted_size]
+    @pytest.mark.parametrize(
+        "batch_size, seq_lens, stage_idx",
+        [(2,(63,),0), (12,(4,3),0), (1,(12, 3),1), (2,(5, 4),1), (1,(3,4,5),2),(1,(6,3,1),2),(2,(4,9,17),0)]
+    )
+    def test_mblm_compute_mask_at_stage_0(self,seq_lens,batch_size,stage_idx):
+
+        conf = self.mblm_conf.model_copy()
+        conf.seq_lens = seq_lens
+        if len(seq_lens) != 2:
+            conf.hidden_dims = self._extend_or_shrink(conf.hidden_dims, len(seq_lens))
+            conf.num_layers = self._extend_or_shrink(conf.hidden_dims, len(seq_lens))
+            conf.block = self._extend_or_shrink(conf.block, len(seq_lens))
+
+        mask = torch.ones((batch_size,*seq_lens)).to(torch.bool)
+
+        out = MBLMEncoder.compute_mask_at_stage(mask,stage_idx)
+        # mask is BxL
+        assert out.ndim == 2
+        # mask is BxL
+        assert out.size(-1) == seq_lens[stage_idx]
+        # # The batch size is the prod of the batch size and the previous stage sequence length, +1 is for the initial
+        # batch size
+        assert out.size(0) == torch.prod(torch.tensor([batch_size, *seq_lens][:stage_idx+1]))
+
+
+    def test_masked_mblm_fully_masked_returns_0_as_loss(
         self,
     ):
+        conf = self.mblm_conf
+        conf.seq_lens = [12,4]
         masked_model = MBLMEncoder(
-            MBLMEncoderModelConfig(mask_token_id=self.mask_token_id, mblm_config=self.mblm_conf)
+            MBLMEncoderModelConfig(mask_token_id=self.mask_token_id, mblm_config=conf)
         )
-        input_len = int(torch.prod(torch.tensor(self.mblm_conf.seq_lens)).item())
+        input_len = int(torch.prod(torch.tensor(conf.seq_lens)).item())
         input_ids = torch.randint(0, self.num_tokens, size=(1, input_len), dtype=torch.long)
         masked_input = input_ids.clone()
         mask = torch.zeros_like(input_ids)
@@ -164,7 +193,8 @@ class TestMaskedMBLM:
         loss = masked_model.forward(
             masked_input, mask=mask, labels=input_ids, return_type=MBLMReturnType.LOSS
         )
-        assert loss.isnan().item(), f"Got {loss.isnan().item()}"
+        
+        assert torch.isclose(loss,torch.tensor(0)), f"Got {loss.item()}"
 
     def test_masked_mblm_partially_masked_is_float(
         self,
@@ -184,10 +214,12 @@ class TestMaskedMBLM:
         assert loss.dtype == torch.float and loss.item() > 0.0
 
     @pytest.mark.parametrize("batch", [1, 3])
+    @torch.no_grad()
     def test_masked_mblm_return_type_shape(self, batch):
         masked_model = MBLMEncoder(
             MBLMEncoderModelConfig(mask_token_id=self.mask_token_id, mblm_config=self.mblm_conf)
         )
+        masked_model.eval()
         input_len = int(torch.prod(torch.tensor(self.mblm_conf.seq_lens)).item())
         input_ids = torch.randint(0, self.num_tokens, size=(batch, input_len), dtype=torch.long)
         masked_input = input_ids.clone()
@@ -204,6 +236,7 @@ class TestMaskedMBLM:
         assert logit.size() == torch.Size([batch, input_len, self.mblm_conf.num_tokens])
         assert hidden_state.size() == torch.Size([batch, input_len, self.mblm_conf.hidden_dims[-1]])
 
+    @torch.no_grad()
     @pytest.mark.parametrize("batch", [1, 3])
     def test_masked_mblm_combined_return(self, batch):
         masked_model = MBLMEncoder(
@@ -229,6 +262,7 @@ class TestMaskedMBLM:
         assert torch.isclose(loss, loss_only), f"{loss.item()} is not close to {loss_only.item()}"
         assert torch.all(logits == logits_only), f"{logits} does not equal  {logits_only}"
 
+    @torch.no_grad()
     @pytest.mark.parametrize("batch", [1, 3])
     def test_masked_mblm_input_seq_len(self, batch):
         max_input_length = int(torch.prod(torch.tensor(self.mblm_conf.seq_lens)).item())

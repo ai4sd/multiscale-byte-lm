@@ -22,8 +22,9 @@ SOFTWARE."""
 
 import logging
 import math
-from typing import Iterable, Literal, Optional, Sequence, cast, overload
-
+from typing import Iterable, Literal, Optional, Sequence, cast, overload, Tuple
+from mblm.model.config import MaskReduceStrat
+from functools import partial
 import torch
 import torch.nn.functional as F  # noqa: N812
 from einops import pack, rearrange, repeat, unpack
@@ -509,7 +510,7 @@ class MBLM(nn.Module):
                 attended = rearrange(attended[..., 1:, :], "b ... v -> b (...) v")
                 # remove the padding
                 attended = attended[:, :flat_seq_len]
-            return attended
+            return attended[..., 1:, :]
 
         logits = self.to_logits.forward(attended)  # (B, P_1', P_2, ..., 1 + P_n, V)
 
@@ -643,48 +644,543 @@ class MBLM(nn.Module):
 
 
 class MBLMEncoder(nn.Module):
-    def __init__(self, config: MBLMEncoderModelConfig, **kwargs):
-        super().__init__(**kwargs)
-        self.mask_token_id = config.mask_token_id
-        self.mblm = MBLM(config.mblm_config)
+        """
+        Multiscale Byte Language Model (MBLM) Encoder is a hierarchical
+        sequence-to-sequence encoder model.
+        It is heavily inspired from the model above done by Eric Egli which itself is
+        based on a refined fork of https://github.com/lucidrains/MEGABYTE-pytorch
+        (version 0.3.5).
+        """
 
-    def forward(
-        self,
-        masked_input_ids: Optional[torch.Tensor] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
-        mask: Optional[torch.Tensor] = None,
-        labels: Optional[torch.Tensor] = None,
-        return_type: MBLMReturnType = MBLMReturnType.HIDDEN_STATE,
-    ):
-        if return_type == MBLMReturnType.HIDDEN_STATE:
-            return self.mblm.forward(
-                masked_input_ids, inputs_embeds, return_type=MBLMReturnType.HIDDEN_STATE
+        def __init__(self, config: MBLMEncoderModelConfig):
+            super().__init__()
+            self.mask_token_id = config.mask_token_id
+            self.reduce_strat = config.mask_reduce_strat
+            self.mblm_config = config.mblm_config
+            assert len(self.mblm_config.hidden_dims) == len(self.mblm_config.num_layers) == len(self.mblm_config.seq_lens)
+            if self.mblm_config.train_checkpoint_chunks:
+                assert len(self.mblm_config.hidden_dims) - 1 == len(self.mblm_config.train_checkpoint_chunks)
+
+            self.num_stages = len(self.mblm_config.hidden_dims)
+            self.seq_lens = self.mblm_config.seq_lens
+            self.pad_token_id = self.mblm_config.pad_token_id
+            self.checkpoint_chunks: list[int | None] = (
+                [None] + self.mblm_config.train_checkpoint_chunks
+                if self.mblm_config.train_checkpoint_chunks
+                else [None] * self.num_stages
             )
 
-        logits = self.mblm.forward(
-            masked_input_ids, inputs_embeds, return_type=MBLMReturnType.LOGITS
-        )
-        if return_type == MBLMReturnType.LOGITS:
-            return logits
-        # ignore non mask token in the loss computation, this is used with the ignore_index parameter of cross_entropy
-        if mask is None or labels is None:
-            raise ValueError("Unable to compute the loss without a mask and labels")
-        assert (
-            mask.dtype == torch.bool
-        ), f"The mask tensor should should be of dtype bool, currently is {mask.dtype}"
-        assert (
-            mask.shape == labels.shape
-        ), f"mask and labels shape should be equivalent, but mask={mask.shape} and labels={labels.shape}"
-        labels[~mask] = self.mask_token_id
-        logits = rearrange(logits, "b s v -> b v s")
-        # target is Batch, Seq_len
-        loss = torch.nn.functional.cross_entropy(
-            input=logits, target=labels, ignore_index=self.mask_token_id
-        )
+            self.final_hidden_dim = self.mblm_config.hidden_dims[-1]
 
-        if return_type == MBLMReturnType.LOSS:
-            return loss
-        if return_type == MBLMReturnType.LOSS_LOGITS:
-            return loss, rearrange(logits, "b v s -> b s v")
-        else:
-            raise ValueError("New return type is not currently handled")
+            stage_blocks = self.mblm_config.stage_blocks()
+
+            self.pos_embs = self._init_positional_embeddings(
+                self.mblm_config.hidden_dims, self.mblm_config.seq_lens, stage_blocks
+            )
+
+            self.token_embs_rev = MultiStageTokenEmbedding.build(
+                model_dims=self.mblm_config.hidden_dims,
+                seq_lens=self.mblm_config.seq_lens,
+                vocab_size=self.mblm_config.num_tokens,
+                pad_token_id=self.mblm_config.pad_token_id,
+            )
+
+            self.stage_models, self.to_next_stage_proj = self._init_models_at_stages(
+                self.mblm_config.hidden_dims, self.mblm_config.seq_lens, self.mblm_config.num_layers, stage_blocks
+            )
+
+            self.to_logits = nn.Linear(self.mblm_config.hidden_dims[-1], self.mblm_config.num_tokens)
+
+            self._warned_single_tensor_embeds: bool = False
+
+        @classmethod
+        def _init_positional_embeddings(
+                cls,
+                model_dims: Iterable[int],
+                seq_lens: Iterable[int],
+                blocks: Iterable[StageBlock],
+        ) -> nn.ModuleList:
+            """
+            Create positional embeddings for each patch.
+            """
+            modules = nn.ModuleList()
+            for model_dim, seq_len, block in zip(model_dims, seq_lens, blocks):
+                if not block.pos_emb_type:
+                    modules.append(nn.Identity())
+                elif block.pos_emb_type == "fixed":
+                    modules.append(nn.Embedding(seq_len, model_dim))
+                elif block.pos_emb_type == "rope":
+                    modules.append(
+                        RoPE(
+                            model_dim,
+                            # only used for caching, will not fail if we're feeding
+                            # in longer sequences - cache will be rebuilt with the
+                            # new sequence length
+                            max_seq_len=seq_len,
+                        )
+                    )
+            return modules
+
+        @classmethod
+        def _init_models_at_stages(
+                cls,
+                model_dims: Sequence[int],
+                seq_lens: Sequence[int],
+                num_stage_layers: Iterable[int],
+                blocks: Iterable[StageBlock],
+        ) -> tuple[nn.ModuleList, nn.ModuleList]:
+            """
+            Initialize the models and next-stage projections for each stage.
+            """
+            stage_models = nn.ModuleList([])
+            to_next_stage_proj = nn.ModuleList([])
+
+            for block, model_dim, num_layers, next_model_dim, next_seq_len in zip(
+                    blocks,
+                    model_dims,
+                    num_stage_layers,
+                    tuple(model_dims[1:]) + (None,),
+                    tuple(seq_lens[1:]) + (None,),
+            ):
+                stage_models.append(block.to_model(model_dim=model_dim, num_layers=num_layers))
+
+                proj: torch.nn.Module = nn.Identity()
+
+                if next_model_dim and next_seq_len:
+                    proj = nn.Sequential(
+                        Rearrange("b ... d -> b (...) d"),
+                        nn.Linear(model_dim, next_model_dim * next_seq_len),
+                        Rearrange("b m (n d) -> (b m) n d", n=next_seq_len),
+                    )
+
+                to_next_stage_proj.append(proj)
+            return stage_models, to_next_stage_proj
+
+
+
+        @overload
+        def forward(
+                self,
+                input_ids: Optional[torch.Tensor] = None,
+                inputs_embeds: Optional[torch.Tensor | Sequence[torch.Tensor]] = None,
+                mask: torch.Tensor | None = ...,
+                labels: torch.Tensor | None = ...,
+                loss_mask:  torch.Tensor | None =None,
+                return_type: Literal[MBLMReturnType.LOSS ] = ...,
+        ) -> torch.Tensor:
+            ...
+
+        @overload
+        def forward(
+                self,
+                input_ids: Optional[torch.Tensor] = None,
+                inputs_embeds: Optional[torch.Tensor | Sequence[torch.Tensor]] = None,
+                mask: torch.Tensor | None = ...,
+                labels: torch.Tensor | None = ...,
+                loss_mask: torch.Tensor | None = None,
+                return_type: Literal[MBLMReturnType.LOSS_LOGITS] = ...,
+        ) -> tuple[torch.Tensor, torch.Tensor]:
+            ...
+
+        @overload
+        def forward(
+                self,
+                input_ids: Optional[torch.Tensor] = None,
+                inputs_embeds: Optional[torch.Tensor | Sequence[torch.Tensor]] = None,
+                mask: torch.Tensor | None = None,
+                labels: torch.Tensor | None = None,
+                loss_mask: torch.Tensor | None = None,
+                return_type: Literal[MBLMReturnType.HIDDEN_STATE] = ...,
+        ) -> torch.Tensor:
+            ...
+
+        def forward(
+                self,
+                input_ids: Optional[torch.Tensor] = None,
+                inputs_embeds: Optional[torch.Tensor | Sequence[torch.Tensor]] = None,
+                mask: torch.Tensor | None = None,
+                labels: torch.Tensor | None = None,
+                loss_mask: torch.Tensor | None = None,
+                return_type: Literal[MBLMReturnType.HIDDEN_STATE, MBLMReturnType.LOSS_LOGITS, MBLMReturnType.LOGITS,MBLMReturnType.LOSS] = ... ,
+        ) -> Tuple[torch.Tensor,torch.Tensor]:
+            """
+            A single forward pass.
+
+            Args:
+                input_ids: The token ids as torch.LongTensor in shape (B, L).
+                inputs_embeds: Precomputed embeddings as float tensor or sequence of tensors.
+                    Must be mutually exclusive with input_ids. Can be either:
+                    - Single tensor: Will be reused across all stages (bypasses embedding lookups).
+                        The tensor must be pre-organized into the hierarchical structure:
+                        (B, P1', P2, ..., Pn, Dn) for multi-stage or (B, L, D) for single-stage.
+                        NOTE: This will produce different results than input_ids because each stage
+                        has its own embedding table.
+                    - Sequence of tensors: One tensor per stage (in reverse order: local to global).
+                      This allows exact replication of the input_ids path.
+                      Expected shapes: [local_embs (B, P1', P2, ..., Pn, Dn), ..., global_embs (B, P1', D1)]
+                return_type: What to return - the loss, the logits, the the Hidden_state or the loss and the logits
+                mask: The
+                labels
+                loss_mask: An optional masking tensor that enables interpolation between
+                    self-supervised and supervised learning. It determines which tokens in the
+                    prediction should contribute to the loss with what weight and should have
+                    the same shape as `input_ids`. For example, if `loss_mask` is a tensor
+                    `torch.ones(input_ids)`, we learn to predict `input_ids` (self-supervised).
+                    In other scenarios, `input_ids` might be a flat tensor with `...question,
+                    ...answer`. In this case, one can provide a `loss_mask` in which the
+                    question tokens have a mask of 0 and the answer a mask of 1. The loss
+                    is then only computed on the answer, resulting in a supervised setting.
+                    By default, not providing a `loss_mask` is equivalent to a `loss_mask`
+                    consisting of all 1
+            """
+            if (input_ids is None) == (inputs_embeds is None):
+                raise ValueError("Pass exactly one of input_ids or inputs_embeds.")
+
+            embeds_list: Optional[Sequence[torch.Tensor]] = None
+
+            if input_ids is not None:
+                device = input_ids.device
+                batch_size = input_ids.shape[0]
+
+                assert input_ids.ndim in {2, self.num_stages + 1}
+
+                if input_ids.numel() == 0:
+                    raise ValueError("input_ids must have at least one element.")
+
+                if loss_mask is not None:
+                    assert loss_mask.shape == input_ids.shape
+                if mask is not None:
+                    assert mask.shape == input_ids.shape
+
+                flattened_dims = input_ids.ndim == 2
+                flat_seq_len = input_ids.shape[-1]
+
+                # if the input is given as (B, L), reshape and distribute it among the
+                # hierarchy sequence lengths, filling up the inner dimensions
+                # first. padding is applied so that the output shape is (B, P_1', P_2,
+                # ..., P_n). for the largest possible L == prod(seq_lens), P_1' = P_1.
+                # in all other cases, P_1' < P_1, meaning no padding is applied to the
+                # global sequence P_1.
+                #
+                #
+                # input: (B, L) = (1, 13), output: (B, P_1', P_2, P_3) = (1, 2, 4, 3)
+                # input: (B, L) = (1, 60), output: (B, P_1,  P_2, P_3) = (1, 5, 4, 3)
+                #
+                # in the 2nd example, L = prod(seq_lens) = 5 * 4 * 3 = 60 = P_1 = P_1'
+                if flattened_dims:
+                    # pad/fill up all inner sequence lengths (all except most global)
+                    input_ids, mask = self.pad_and_nest(input_ids,
+                                                        mask,
+                                                        self.seq_lens,
+                                                        batch_size=batch_size,
+                                                        flat_seq_len=flat_seq_len,
+                                                        pad_token_id=self.pad_token_id)
+
+
+                # make sure the above condition holds, i.e., P_1' <= P_1
+                _P_1_prime, _P_1 = input_ids.shape[1], self.seq_lens[0]  # noqa: N806
+                fixed_global_patch_encoding = isinstance(self.pos_embs[0], nn.Embedding)
+                if fixed_global_patch_encoding:
+                    assert _P_1_prime <= _P_1, (
+                        f"Because you are using a fixed global patch embedding, "
+                        f"the input sequence length ({_P_1_prime}) "
+                        f"must be less than the first tuple element of seq_lens ({_P_1})"
+                    )
+            elif inputs_embeds is not None:
+                flattened_dims = False
+                if return_type != MBLMReturnType.HIDDEN_STATE:
+                    raise ValueError(
+                        f"Forward pass with return type {return_type} has not been tested and is not supported "
+                        f"when providing `inputs_embeds`."
+                    )
+
+                # Check if inputs_embeds is a sequence of tensors or a single tensor
+                is_sequence = isinstance(inputs_embeds, (list, tuple))
+
+                if is_sequence:
+                    # Sequence of tensors: one per stage (in reverse order: local to global)
+                    # Type narrowing: we know inputs_embeds is a Sequence here
+                    inputs_embeds_seq: Sequence[torch.Tensor] = cast(
+                        Sequence[torch.Tensor], inputs_embeds
+                    )
+                    assert len(inputs_embeds_seq) == self.num_stages, (
+                        f"`inputs_embeds` sequence must have {self.num_stages} tensors (one per stage), "
+                        f"got {len(inputs_embeds_seq)}"
+                    )
+                    # Validate each tensor in the sequence
+                    device = inputs_embeds_seq[0].device
+                    for stage_idx, stage_embeds in enumerate(inputs_embeds_seq):
+                        assert isinstance(
+                            stage_embeds, torch.Tensor
+                        ), f"`inputs_embeds[{stage_idx}]` must be a torch.Tensor"
+                        assert (
+                                stage_embeds.device == device
+                        ), "All tensors in `inputs_embeds` must be on the same device"
+
+                    embeds_list = inputs_embeds_seq
+                else:
+                    # Single tensor: will be reused across all stages
+                    # Type narrowing: we know inputs_embeds is a Tensor here
+                    inputs_embeds_single = cast(torch.Tensor, inputs_embeds)
+                    device = inputs_embeds_single.device
+
+                    # Warn once per instance that single tensor cannot reproduce input_ids results
+                    if not self._warned_single_tensor_embeds and self.num_stages > 1:
+                        import warnings
+
+                        warnings.warn(
+                            "Passing a single tensor to `inputs_embeds` bypasses per-stage embedding tables "
+                            "and cannot fully reproduce the results of passing `input_ids`. "
+                            "For exact consistency, pass a sequence of tensors (one per stage) instead.",
+                            UserWarning,
+                            stacklevel=2,
+                        )
+                        self._warned_single_tensor_embeds = True
+
+                    assert inputs_embeds_single.ndim == self.num_stages + 2, (
+                        f"`inputs_embeds` must be nested with {self.num_stages} hierarchy dims "
+                        f"(B + P1'..Pn + D), got shape {tuple(inputs_embeds_single.shape)}"
+                    )
+
+                    assert inputs_embeds_single.shape[-1] == self.final_hidden_dim, (
+                        f"Last dim of `inputs_embeds` must equal final hidden dim ({self.final_hidden_dim}), "
+                        f"got {inputs_embeds_single.shape[-1]}"
+                    )
+                    # Inner hierarchy dims must match config exactly
+                    for k, expected in enumerate(self.seq_lens[1:], start=2):
+                        got = inputs_embeds_single.shape[k]
+                        assert (
+                                got == expected
+                        ), f"`inputs_embeds` inner dim at stage {k - 1} must be {expected}, got {got}"
+                    # Global fixed pos-emb requires P1' <= P1
+                    if isinstance(self.pos_embs[0], nn.Embedding):
+                        assert inputs_embeds_single.shape[1] <= self.seq_lens[0], (
+                            f"With fixed global positional embedding, P1'={inputs_embeds_single.shape[1]} must "
+                            f"be <= P1={self.seq_lens[0]}"
+                        )
+                # `flat_seq_len` is irrelevant in this branch (we do not compute loss/logits)
+                flat_seq_len = 0  # keep a defined name for readability
+
+            token_embs_at_stages = [torch.empty(0) for _ in range(self.num_stages)]
+            ids_buf = input_ids
+            embeds_buf = inputs_embeds if inputs_embeds is not None and not is_sequence else None
+
+            # at this stage, we're working with nested ids - hence, embed the bytes
+            # for each stage in reverse order, starting from the local and ending at
+            # the most global model. at each stage, add positional embeddings and
+            # rerrange the input shape to match the dimension of the previous
+            # (local) stage. with three stages:
+            #
+            # [0]: (B, P_1', D_1)
+            # [1]: (B, P_1', P_2, D_2)
+            # [2]: (B, P_1', P_2, P_3, D_3)
+            for stage_idx, pos_emb, token_emb in zip(
+                    range(self.num_stages - 1, -1, -1),
+                    reversed(self.pos_embs),
+                    self.token_embs_rev,
+            ):
+                # If we have a sequence of embeddings, use them directly (they're already embedded+projected)
+                if embeds_list is not None:
+                    # embeds_list is in reverse order (local to global), matching stage_idx iteration
+                    stage_token_embs = embeds_list[self.num_stages - 1 - stage_idx]
+                else:
+                    # Normal path: embed the ids or embeds_buf
+                    stage_token_embs = token_emb(ids_buf, embeds_buf)
+                stage_seq_len = stage_token_embs.shape[-2]
+                if isinstance(pos_emb, nn.Embedding):
+                    positions: torch.Tensor = pos_emb(
+                        torch.arange(stage_seq_len, device=device),
+                    )
+                    stage_token_embs = stage_token_embs + positions
+                elif isinstance(pos_emb, RoPE):
+                    batch, *seq_lens, hidden_dim = stage_token_embs.shape
+                    # RoPE expects as input [batch, seq_len, num_heads, head_dim] ->
+                    # pack to artificial batch dim and add an empty head dimension
+                    stage_token_embs = stage_token_embs.view(-1, seq_lens[-1], 1, hidden_dim)
+                    stage_token_embs = pos_emb.forward(stage_token_embs)
+                    # reshape back to input
+                    stage_token_embs = stage_token_embs.view(batch, *seq_lens, hidden_dim)
+
+                token_embs_at_stages[stage_idx] = stage_token_embs
+
+                # skip rearranging for the most local model
+                if stage_idx == self.num_stages - 1:
+                    continue
+
+                if ids_buf is not None:
+                    ids_buf = rearrange(ids_buf, "... m n -> ... (m n)")
+                elif embeds_list is None:
+                    # Only rearrange embeds_buf if we're using a single tensor (not a sequence)
+                    embeds_buf = rearrange(embeds_buf, "... m n d -> ... (m n) d")  # type: ignore
+
+            # initials
+            prev_stage_tokens_repr: torch.Tensor | None = None
+            attended: torch.Tensor = torch.empty(0)
+
+            for stage_idx in range(self.num_stages):
+                stage_seq_len = self.seq_lens[stage_idx]
+                stage_emb_tokens = token_embs_at_stages[stage_idx]
+                model = self.stage_models[stage_idx]
+                checkpoint_chunk = self.checkpoint_chunks[stage_idx]
+                proj = self.to_next_stage_proj[stage_idx]
+                # for each stage n, going from global to local, pack the tokens into
+                # a new tensor so that the last two dimensions correspond to the
+                # sequence length and the dimension of that stage - later, the shape
+                # is restored by the unpack operations.
+
+                # the first dimension ("*"), after packing, corresponds to the
+                # number of patches in the current stage (which can be considered a
+                # batch for the stage because they are processed in parallel). the
+                # patch size of model n-1 becomes the batch size of model n, and so
+                # on
+                stage_tokens, ps = pack([stage_emb_tokens], "* s d")
+
+                # sum the previous hierarchy's representation
+                if prev_stage_tokens_repr is not None:
+                    stage_tokens = stage_tokens + prev_stage_tokens_repr
+                # stage_tokens is now [B, P_n, D_n]. for the first stage, B is the
+                # actual batch size whereas for the other stages, the batch size
+                # corresponds to the sequence length of the previous hierarchy stage
+                packed_mask = self.compute_mask_at_stage(nested_mask=mask, stage_idx=stage_idx,reduce_strat=self.reduce_strat)
+                attended = model.forward(stage_tokens,packed_mask)
+
+                # the output and input share are equal -> by unpacking again, we
+                # restore the initial shape
+                attended = unpack(attended, ps, "* s d")[0]
+                # project for next stage in the hierarchy, not dropping the last patch:
+                # from (..., P_n, D_n) to (..., P_n, P_n+1, D_n+1)
+                prev_stage_tokens_repr = proj(attended)
+
+            if return_type == MBLMReturnType.HIDDEN_STATE:
+                if flattened_dims:
+                    # Combine inner dimensions into one
+                    attended = rearrange(attended, "b ... v -> b (...) v")
+                    # remove the padding
+                    attended = attended[:, :flat_seq_len]
+                return attended
+
+            logits = self.to_logits.forward(attended)  # (B, P_1', P_2, ..., 1 + P_n, V)
+
+            logits_out = logits
+
+            if flattened_dims:
+                # drop the start tokens and combine inner dimensions into one
+                logits_out = rearrange(logits_out[..., :, :], "b ... v -> b (...) v")
+
+                # remove the padding
+                logits_out = logits_out[:, :flat_seq_len]
+
+            if return_type == MBLMReturnType.LOGITS:
+                return logits_out
+
+            # the most local sequences still contain the preprended start tokens
+            # (i.e., the logits) - extract this token once and later prepend it to
+            # the flattened sequence
+
+            # Combine inner dimensions into one...
+            logits_rearranged = rearrange(logits[..., :, :], "b ... v -> b (...) v")
+
+
+
+            # rearrange for loss calculation: the k-dimensional loss expects (B, V,
+            # L, drop the padding
+            preds = rearrange(logits_rearranged, "b l v -> b v l")[:, :, :flat_seq_len]
+            targets = rearrange(labels, "b ... -> b (...)")
+            mask = rearrange(mask, "b ... -> b (...)")[:, :flat_seq_len]
+
+            # Ignore where the mask is set to no attention, these are padding tokens.
+            targets[~mask] = -100
+            loss_tensor: torch.Tensor = F.cross_entropy(
+                preds,
+                targets,  # type: ignore
+                ignore_index=-100,
+                reduction="none",
+            )
+
+            # remove the hierarchy padding (ignored in the loss calculation) and
+            # bring to same shape as input_ids
+            loss_tensor = loss_tensor[:, :flat_seq_len]
+
+            if loss_mask is not None:
+                # potentially apply the loss mask. this does not involve
+                # broadcasting as after slicing above, the mask and the loss tensor
+                # have the exact same shape again
+
+                loss_tensor *= loss_mask
+
+            # after applying the mask, some elements might be 0 - they should not be
+            # accounted for in the loss calculation
+            nonzero_idxs = torch.nonzero(loss_tensor, as_tuple=True)
+            loss = loss_tensor[nonzero_idxs].mean()
+            if torch.isnan(loss):
+                # special case when the loss is zero across target elements - should
+                # theoretically never happen, except if you mask the whole sequence is ignored
+                loss = torch.zeros_like(loss, requires_grad=True)
+                logging.fatal("Edge case detected, loss is nan")
+
+            if return_type == MBLMReturnType.LOSS:
+                return loss
+            return loss, logits_out
+
+        @staticmethod
+        def pad_and_nest(input_ids:torch.Tensor,mask:torch.Tensor,seq_length_config:Sequence[int],batch_size:int, flat_seq_len:int,pad_token_id:int=0)-> Tuple[torch.Tensor, torch.Tensor]:
+            """
+            Takes a input_ids 2D tensor (BxL) and returns a nested tensor of dim Bx
+            Args:
+                input_ids: the input ids of shape BxL
+                mask: the mask of shape BxL
+                seq_length_config: An iterable stating how long each sequence is for each stage. seq_length_config[0] is the length of the sequence at stage 0
+                batch_size: The batch size
+                flat_seq_len: The sequence length of the flat representation without padding
+                pad_token_id: the value for indicating a padding token
+
+            Returns:
+
+            """
+            assert input_ids.ndim == 2
+            assert mask.ndim == 2
+            local_seq_lens = seq_length_config[1:]
+            multiple_of = math.prod(local_seq_lens)
+            # use the complement of modulo - the difference to the next multiple
+            # of multiple_of - to infer the right padding length
+            padding = -flat_seq_len % multiple_of
+            input_ids = F.pad(input_ids, (0, padding), value=pad_token_id)
+            mask = F.pad(mask, (0, padding), value=0)
+            # reshape and infer the P_1' dimension
+            input_ids = input_ids.reshape(batch_size, -1, *local_seq_lens)
+            mask = mask.reshape(batch_size, -1, *local_seq_lens)
+            return input_ids, mask
+
+        @staticmethod
+        def compute_mask_at_stage(nested_mask: torch.Tensor, stage_idx:int =0,reduce_strat:MaskReduceStrat = MaskReduceStrat.ANY) -> torch.Tensor:
+            """Given a nested masked and a stage index indicating the current stage, compute the mask for the current stage
+            """
+            if nested_mask is None:
+                return None
+
+            if stage_idx > nested_mask.ndim:
+                raise NotImplementedError("There is a mismatch between the number of stage and the nested mask. you should have nested mask with shape"
+                                          "Bx P1...Pn, with n the number of stages")
+
+            # Determine which inner dimensions to reduce.
+            # (e.g., for stage 0, we keep B and P1, reducing P2...Pn)
+            reduce_dims = tuple(range(stage_idx + 2, nested_mask.ndim))
+            if reduce_dims:
+                # A macro-patch is valid if ANY of its sub-tokens are valid as we can extract info from it
+                match reduce_strat:
+                    case MaskReduceStrat.ANY:
+                        reduction = partial(torch.any, dim=reduce_dims)
+                    case MaskReduceStrat.ALL:
+                        reduction = partial(torch.all, dim=reduce_dims)
+                    case _:
+                        raise NotImplementedError("This reduction does not exist yet")
+                # Reduce to shape K,Pi,
+                # with True set to mask[k,pi] if there exists a sub-tensor j such that mask[k,pi,j...]==True  (any)
+                # with True set to mask[k,pi] if for all j mask[k,pi,j...]==True  (all)
+                stage_mask = reduction(nested_mask)
+            else:
+                stage_mask = nested_mask
+
+            # Pack the leading dimensions into batch of size K to match stage_tokens shape: (K, Pi)
+            packed_mask, _ = pack([stage_mask], "* s")
+            return packed_mask

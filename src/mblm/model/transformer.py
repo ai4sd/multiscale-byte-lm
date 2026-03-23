@@ -32,11 +32,35 @@ from MEGABYTE_pytorch.megabyte import (
     RotaryEmbedding,
     token_shift,
 )
+from functools import wraps
+
+import torch
+import torch.nn.functional as F
+from einops import rearrange
+from packaging import version
+from torch import einsum, nn
+from torch.nn.attention import SDPBackend
+from torch.amp import autocast
+
 from pydantic import Field, model_validator
 
 from mblm.model.block import StageBlock
 
 
+def once(fn):
+    called = False
+    @wraps(fn)
+    def inner(x):
+        nonlocal called
+        if called:
+            return
+        called = True
+        return fn(x)
+    return inner
+
+print_once = once(print)
+def exists(val):
+    return val is not None
 class TransformerBlock(StageBlock):
     """
     General config for creating a Transformer Decoder block inside MBLM.
@@ -190,19 +214,171 @@ class TransformerEncoder(torch.nn.Module):
 
         self.norm = RMSNorm(model_dim)
 
-    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor|None=None) -> torch.Tensor:
         n = input_ids.shape[-2]
         rotary_emb: torch.Tensor | None = self.rotary_emb(n) if self.rotary_emb else None
 
         for attn, ff in cast(Iterable[tuple[Callable, Callable]], self.layers):
-            input_ids = attn(input_ids, rotary_emb=rotary_emb) + input_ids  #
+            input_ids = attn(input_ids, rotary_emb=rotary_emb, attention_mask=attention_mask) + input_ids  # Skip-connection
             input_ids = ff(input_ids) + input_ids
 
         return self.norm(input_ids)
 
 
-class AttentionEncoder(Attention):
-    def __init__(self, *, dim, dim_head=64, heads=8, dropout=0.0, flash=False):
-        super().__init__(dim=dim, dim_head=dim_head, heads=heads, dropout=dropout, flash=flash)
-        # Override the attend with causal = False
-        self.attend = Attend(causal=False, flash=flash, dropout=dropout)
+# Code Adapted from lucidrain/megabyte
+
+def rotate_half(x):
+    x1, x2 = x.chunk(2, dim=-1)
+    return torch.cat((-x2, x1), dim=-1)
+@autocast('cuda', enabled = False)
+def apply_rotary_pos_emb(pos, t):
+    return t * pos.cos() + rotate_half(t) * pos.sin()
+
+
+class AttentionEncoder(nn.Module):
+    def __init__(
+            self,
+            *,
+            dim,
+            dim_head=64,
+            heads=8,
+            dropout=0.,
+            flash=False
+    ):
+        super().__init__()
+        self.scale = dim_head ** -0.5
+        self.heads = heads
+        inner_dim = dim_head * heads
+
+        self.attend = AttendWithMask(
+            causal=False,
+            flash=flash,
+            dropout=dropout
+        )
+
+        self.dropout = nn.Dropout(dropout)
+        self.norm = RMSNorm(dim)
+        self.to_q = nn.Linear(dim, inner_dim, bias=False)
+        self.to_kv = nn.Linear(dim, inner_dim * 2, bias=False)
+        self.to_out = nn.Linear(inner_dim, dim, bias=False)
+
+    def forward(self, x, attention_mask: torch.Tensor = None, rotary_emb=None):
+        h, device = self.heads, x.device
+
+        x = self.norm(x)
+        q, k, v = (self.to_q(x), *self.to_kv(x).chunk(2, dim=-1))
+        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h=h), (q, k, v))
+
+        if rotary_emb is not None:
+            q, k = map(lambda t: apply_rotary_pos_emb(rotary_emb, t), (q, k))
+
+        out = self.attend(q, k, v, mask=attention_mask)
+
+        out = rearrange(out, 'b h n d -> b n (h d)')
+        return self.to_out(out)
+
+
+class AttendWithMask(Attend):
+    """
+    Computation of the attention mechanism with support for custom masks
+    """
+    def __init__(
+            self,
+            causal=False,
+            dropout=0.,
+            flash=False
+    ):
+        super().__init__()
+        self.dropout = dropout
+        self.attn_dropout = nn.Dropout(dropout)
+
+        self.causal = causal
+        self.flash = flash
+        assert not (flash and version.parse(torch.__version__) < version.parse(
+            '2.0.0')), 'in order to use flash attention, you must be using pytorch 2.0 or above'
+
+        # default cpu attention configs
+        self.attn_cfg = [SDPBackend.FLASH_ATTENTION, SDPBackend.MATH, SDPBackend.EFFICIENT_ATTENTION]
+
+        if not torch.cuda.is_available() or not flash:
+            return
+
+        device_properties = torch.cuda.get_device_properties(torch.device('cuda'))
+
+        if device_properties.major == 8 and device_properties.minor == 0:
+            print_once('A100 GPU detected, using flash attention if input tensor is on cuda')
+            self.attn_cfg = [SDPBackend.FLASH_ATTENTION]
+        else:
+            print_once('Non-A100 GPU detected, using math or mem efficient attention if input tensor is on cuda')
+            self.attn_cfg = [SDPBackend.MATH, SDPBackend.EFFICIENT_ATTENTION]
+
+    def get_mask(self, i, j, device):
+        return torch.ones((i, j), device=device, dtype=torch.bool).triu(j - i + 1)
+
+    def flash_attn(self, q, k, v, mask=None, attn_bias=None):
+        _, heads, q_len, _, k_len, is_cuda, device = *q.shape, k.shape[-2], q.is_cuda, q.device
+
+        # single headed key / values
+        if k.ndim == 3:
+            k = rearrange(k, 'b n d -> b 1 n d')
+
+        if v.ndim == 3:
+            v = rearrange(v, 'b n d -> b 1 n d')
+
+        is_causal = self.causal
+
+        if mask is not None:
+            if mask.ndim != 4:
+                # Expand (b, j) -> (b, 1, 1, j)
+                mask = rearrange(mask, 'b j -> b 1 1 j')
+                mask = mask.expand(-1, heads, q_len, -1)
+
+            if self.causal:
+                # PyTorch SDPA requires True for "attend" and False for "mask out".
+                # We build a causal mask and logically AND it with the provided mask.
+                causal_mask = torch.ones((q_len, k_len), device=device, dtype=torch.bool).tril()
+                mask = mask & causal_mask
+                # Disable SDPA's built-in causal handling since we merged it manually
+                is_causal = False
+
+        with torch.nn.attention.sdpa_kernel(self.attn_cfg):
+            out = F.scaled_dot_product_attention(
+                q, k, v,
+                attn_mask=mask,
+                dropout_p=self.dropout if self.training else 0.,
+                is_causal=is_causal
+            )
+        return out
+
+    def forward(self, q, k, v, mask=None):
+        q_len, k_len, device = q.shape[-2], k.shape[-2], q.device
+        scale = q.shape[-1] ** -0.5
+        kv_einsum_eq = 'b j d' if k.ndim == 3 else 'b h j d'
+
+        if self.flash:
+            return self.flash_attn(q, k, v, mask=mask)
+
+        # similarity
+        sim = einsum(f"b h i d, {kv_einsum_eq} -> b h i j", q, k) * scale
+
+        # FIX 2: Apply the user-provided mask in the non-flash fallback
+        if mask is not None:
+            if mask.ndim == 2:
+                mask = rearrange(mask, 'b j -> b 1 1 j')
+            # ~mask implies False means "mask out", True means "keep"
+            sim = sim.masked_fill(~mask, -torch.finfo(sim.dtype).max)
+
+        # causal mask
+        if self.causal:
+            causal_mask = self.get_mask(q_len, k_len, device)
+            # get_mask returns True for the upper triangle (future tokens)
+            sim = sim.masked_fill(causal_mask, -torch.finfo(sim.dtype).max)
+
+        # attention
+        attn = sim.softmax(dim=-1)
+        attn = self.attn_dropout(attn)
+
+        # aggregate values
+        out = einsum(f"b h i j, {kv_einsum_eq} -> b h i d", attn, v)
+
+        return out
