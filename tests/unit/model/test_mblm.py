@@ -1,6 +1,7 @@
 import io
 import math
 from functools import partial
+from typing import List
 
 import pytest
 import torch
@@ -11,7 +12,7 @@ from mblm.model.mblm import MBLMEncoder
 from mblm.model.transformer import TransformerEncoderBlock
 from mblm.utils.seed import seed_everything
 from mblm.utils.stream import ByteStreamer
-from typing import List
+
 
 class TestMBLM:
     num_tokens = 256 + 1
@@ -127,8 +128,8 @@ class TestMaskedMBLM:
     mblm_conf = MBLMModelConfig(
         num_tokens=300,
         pad_token_id=299,
-        hidden_dims=[1024, 32],
-        seq_lens=[512, 128],
+        hidden_dims=[48, 32],
+        seq_lens=[21, 128],
         num_layers=[5, 1],
         train_checkpoint_chunks=None,
         block=[
@@ -149,14 +150,59 @@ class TestMaskedMBLM:
         ],
     )
 
-    def _extend_or_shrink(self,values:List,wanted_size:int):
+    @pytest.mark.parametrize(
+        "seq_lens",
+        [
+            (4, 3),
+            (12, 3),
+            (5, 4),
+            (3, 4, 5),
+            (6, 3, 1),
+            (4, 9, 17),
+        ],
+    )
+    def test_mblm_with_nested_input_works(self, seq_lens):
+        conf = self.mblm_conf.model_copy()
+        conf.seq_lens = seq_lens
+        if len(seq_lens) != 2:
+            conf.hidden_dims = self._extend_or_shrink(conf.hidden_dims, len(seq_lens))
+            conf.num_layers = self._extend_or_shrink(conf.hidden_dims, len(seq_lens))
+            conf.block = self._extend_or_shrink(conf.block, len(seq_lens))
+        model = MBLMEncoder(
+            MBLMEncoderModelConfig(mask_token_id=self.mask_token_id, mblm_config=conf)
+        )
+        batch_size, seq_lens = 3, conf.seq_lens
+
+        mask = torch.ones((batch_size, *seq_lens)).to(torch.bool)
+        input_ids = torch.randint(0, conf.num_tokens, size=(batch_size, *seq_lens)).to(torch.long)
+        assert input_ids.ndim == len(seq_lens) + 1  # account for batch size
+        assert mask.ndim == len(seq_lens) + 1  # account for batch size
+
+        loss_logit = model(
+            input_ids=input_ids, mask=mask, labels=input_ids, return_type=MBLMReturnType.LOSS_LOGITS
+        )
+        assert loss_logit[0].numel() == 1
+        assert loss_logit[1].numel() == torch.prod(
+            torch.tensor([batch_size, *seq_lens, conf.num_tokens])
+        )
+
+    def _extend_or_shrink(self, values: List, wanted_size: int):
+        """Given a list of values and wanted_size, shrink the list or extend it to the wanted_size"""
         return (values + [values[-1]] * max(0, wanted_size - len(values)))[:wanted_size]
+
     @pytest.mark.parametrize(
         "batch_size, seq_lens, stage_idx",
-        [(2,(63,),0), (12,(4,3),0), (1,(12, 3),1), (2,(5, 4),1), (1,(3,4,5),2),(1,(6,3,1),2),(2,(4,9,17),0)]
+        [
+            (2, (63,), 0),
+            (12, (4, 3), 0),
+            (1, (12, 3), 1),
+            (2, (5, 4), 1),
+            (1, (3, 4, 5), 2),
+            (1, (6, 3, 1), 2),
+            (2, (4, 9, 17), 0),
+        ],
     )
-    def test_mblm_compute_mask_at_stage_0(self,seq_lens,batch_size,stage_idx):
-
+    def test_mblm_compute_mask_at_stage(self, seq_lens, batch_size, stage_idx):
         conf = self.mblm_conf.model_copy()
         conf.seq_lens = seq_lens
         if len(seq_lens) != 2:
@@ -164,23 +210,22 @@ class TestMaskedMBLM:
             conf.num_layers = self._extend_or_shrink(conf.hidden_dims, len(seq_lens))
             conf.block = self._extend_or_shrink(conf.block, len(seq_lens))
 
-        mask = torch.ones((batch_size,*seq_lens)).to(torch.bool)
+        mask = torch.ones((batch_size, *seq_lens)).to(torch.bool)
 
-        out = MBLMEncoder.compute_mask_at_stage(mask,stage_idx)
+        out = MBLMEncoder.compute_mask_at_stage(mask, stage_idx)
         # mask is BxL
         assert out.ndim == 2
         # mask is BxL
         assert out.size(-1) == seq_lens[stage_idx]
         # # The batch size is the prod of the batch size and the previous stage sequence length, +1 is for the initial
         # batch size
-        assert out.size(0) == torch.prod(torch.tensor([batch_size, *seq_lens][:stage_idx+1]))
-
+        assert out.size(0) == torch.prod(torch.tensor([batch_size, *seq_lens][: stage_idx + 1]))
 
     def test_masked_mblm_fully_masked_returns_0_as_loss(
         self,
     ):
         conf = self.mblm_conf
-        conf.seq_lens = [12,4]
+        conf.seq_lens = [12, 4]
         masked_model = MBLMEncoder(
             MBLMEncoderModelConfig(mask_token_id=self.mask_token_id, mblm_config=conf)
         )
@@ -193,8 +238,8 @@ class TestMaskedMBLM:
         loss = masked_model.forward(
             masked_input, mask=mask, labels=input_ids, return_type=MBLMReturnType.LOSS
         )
-        
-        assert torch.isclose(loss,torch.tensor(0)), f"Got {loss.item()}"
+
+        assert torch.isclose(loss, torch.tensor(0.0)), f"Got {loss.item()}"
 
     def test_masked_mblm_partially_masked_is_float(
         self,
