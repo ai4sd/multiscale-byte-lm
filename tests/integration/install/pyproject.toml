@@ -7,7 +7,7 @@ authors = [
     { name = "Jannis Born", email = "jab@zurich.ibm.com" },
 ]
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = ["mblm", "torch>=2.5.1"]
 
 [tool.uv.sources]
