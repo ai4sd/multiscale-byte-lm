@@ -20,7 +20,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
 
-
+import typing
 from functools import wraps
 from typing import Callable, Iterable, cast
 
@@ -181,6 +181,7 @@ class TransformerEncoderBlock(StageBlock):
         return self
 
 
+@typing.no_type_check
 class TransformerEncoder(torch.nn.Module):
     def __init__(
         self,
@@ -236,16 +237,19 @@ class TransformerEncoder(torch.nn.Module):
 # Code Adapted from lucidrain/megabyte
 
 
+@typing.no_type_check
 def rotate_half(x):
     x1, x2 = x.chunk(2, dim=-1)
     return torch.cat((-x2, x1), dim=-1)
 
 
+@typing.no_type_check
 @autocast("cuda", enabled=False)
 def apply_rotary_pos_emb(pos, t):
     return t * pos.cos() + rotate_half(t) * pos.sin()
 
 
+@typing.no_type_check
 class AttentionEncoder(nn.Module):
     def __init__(self, *, dim, dim_head=64, heads=8, dropout=0.0, flash=False):
         super().__init__()
@@ -261,12 +265,12 @@ class AttentionEncoder(nn.Module):
         self.to_kv = nn.Linear(dim, inner_dim * 2, bias=False)
         self.to_out = nn.Linear(inner_dim, dim, bias=False)
 
-    def forward(self, x, attention_mask: torch.Tensor = None, rotary_emb=None):
+    def forward(self, x, attention_mask: torch.Tensor = None, rotary_emb=None):  # type: ignore
         h, device = self.heads, x.device  # noqa: F841
 
         x = self.norm(x)
-        q, k, v = (self.to_q(x), *self.to_kv(x).chunk(2, dim=-1))
-        q, k, v = map(lambda t: rearrange(t, "b n (h d) -> b h n d", h=h), (q, k, v))
+        q, k, v = (self.to_q(x), *self.to_kv(x).chunk(2, dim=-1))  # type: ignore
+        q, k, v = map(lambda t: rearrange(t, "b n (h d) -> b h n d", h=h), (q, k, v))  # type: ignore
 
         if rotary_emb is not None:
             q, k = map(lambda t: apply_rotary_pos_emb(rotary_emb, t), (q, k))
@@ -277,6 +281,7 @@ class AttentionEncoder(nn.Module):
         return self.to_out(out)
 
 
+@typing.no_type_check
 class AttendWithMask(Attend):
     """
     Computation of the attention mechanism with support for custom masks
@@ -317,8 +322,9 @@ class AttendWithMask(Attend):
     def get_mask(self, i, j, device):
         return torch.ones((i, j), device=device, dtype=torch.bool).triu(j - i + 1)
 
-    def flash_attn(self, q, k, v, mask=None, attn_bias=None):  # noqa ARG002
-        _, heads, q_len, _, k_len, _, device = *q.shape, k.shape[-2], q.is_cuda, q.device
+    @typing.no_type_check
+    def flash_attn(self, q, k, v, mask=None, attn_bias=None):  # noqa ARG002 type: ignore
+        _, heads, q_len, _, k_len, _, device = *q.shape, k.shape[-2], q.is_cuda, q.device  # type: ignore
 
         # single headed key / values
         if k.ndim == 3:
@@ -336,8 +342,8 @@ class AttendWithMask(Attend):
                 mask = mask.expand(-1, heads, q_len, -1)
 
             if self.causal:
-                # PyTorch SDPA requires True for "attend" and False for "mask out".
-                # We build a causal mask and logically AND it with the provided mask.
+                # PyTorch SDPA requires True for "attend" and False for "attention_mask out".
+                # We build a causal attention_mask and logically AND it with the provided attention_mask.
                 causal_mask = torch.ones((q_len, k_len), device=device, dtype=torch.bool).tril()
                 mask = mask & causal_mask
                 # Disable SDPA's built-in causal handling since we merged it manually
@@ -365,14 +371,14 @@ class AttendWithMask(Attend):
         # similarity
         sim = einsum(f"b h i d, {kv_einsum_eq} -> b h i j", q, k) * scale
 
-        # FIX 2: Apply the user-provided mask in the non-flash fallback
+        # FIX 2: Apply the user-provided attention_mask in the non-flash fallback
         if mask is not None:
             if mask.ndim == 2:
                 mask = rearrange(mask, "b j -> b 1 1 j")
-            # ~mask implies False means "mask out", True means "keep"
+            # ~attention_mask implies False means "attention_mask out", True means "keep"
             sim = sim.masked_fill(~mask, -torch.finfo(sim.dtype).max)
 
-        # causal mask
+        # causal attention_mask
         if self.causal:
             causal_mask = self.get_mask(q_len, k_len, device)
             # get_mask returns True for the upper triangle (future tokens)

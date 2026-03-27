@@ -118,8 +118,8 @@ class MBLMModelConfig(BaseModel):
 
 
 class MaskReduceStrat(StrEnum):
-    ANY: str = "any"
-    ALL: str = "all"
+    ANY = "any"
+    ALL = "all"
 
 
 class MBLMEncoderModelConfig(BaseModel):

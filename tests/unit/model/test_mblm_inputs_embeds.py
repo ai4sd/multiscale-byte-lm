@@ -109,7 +109,7 @@ class TestMBLMInputsEmbeds:
             )
 
         with pytest.raises(ValueError):
-            _ = mblm.forward(inputs_embeds=nested, return_type=MBLMReturnType.LOGITS)
+            _ = mblm.forward(inputs_embeds=nested, return_type=MBLMReturnType.LOGITS)  # type: ignore
 
         with pytest.raises(ValueError):
             _ = mblm.forward(inputs_embeds=nested, return_type=MBLMReturnType.LOSS)

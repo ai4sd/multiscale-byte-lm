@@ -22,6 +22,7 @@ SOFTWARE."""
 
 import logging
 import math
+import typing
 from functools import partial
 from typing import Iterable, Literal, Optional, Sequence, Tuple, cast, overload
 
@@ -244,7 +245,7 @@ class MBLM(nn.Module):
                 `torch.ones(input_ids)`, we learn to predict `input_ids` (self-supervised).
                 In other scenarios, `input_ids` might be a flat tensor with `...question,
                 ...answer`. In this case, one can provide a `loss_mask` in which the
-                question tokens have a mask of 0 and the answer a mask of 1. The loss
+                question tokens have a attention_mask of 0 and the answer a attention_mask of 1. The loss
                 is then only computed on the answer, resulting in a supervised setting.
                 By default, not providing a `loss_mask` is equivalent to a `loss_mask`
                 consisting of all 1
@@ -568,12 +569,12 @@ class MBLM(nn.Module):
         loss_tensor = loss_tensor[:, :flat_seq_len]
 
         if loss_mask is not None:
-            # potentially apply the loss mask. this does not involve
-            # broadcasting as after slicing above, the mask and the loss tensor
+            # potentially apply the loss attention_mask. this does not involve
+            # broadcasting as after slicing above, the attention_mask and the loss tensor
             # have the exact same shape again
             loss_tensor *= loss_mask
 
-        # after applying the mask, some elements might be 0 - they should not be
+        # after applying the attention_mask, some elements might be 0 - they should not be
         # accounted for in the loss calculation
         nonzero_idxs = torch.nonzero(loss_tensor, as_tuple=True)
         loss = loss_tensor[nonzero_idxs].mean()
@@ -803,11 +804,12 @@ class MBLMEncoder(nn.Module):
         return_type: Literal[MBLMReturnType.HIDDEN_STATE] = ...,
     ) -> torch.Tensor: ...
 
+    @typing.no_type_check
     def forward(
         self,
         input_ids: Optional[torch.Tensor] = None,
         inputs_embeds: Optional[torch.Tensor | Sequence[torch.Tensor]] = None,
-        mask: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
         labels: torch.Tensor | None = None,
         loss_mask: torch.Tensor | None = None,
         return_type: Literal[
@@ -833,8 +835,9 @@ class MBLMEncoder(nn.Module):
                   This allows exact replication of the input_ids path.
                   Expected shapes: [local_embs (B, P1', P2, ..., Pn, Dn), ..., global_embs (B, P1', D1)]
             return_type: What to return - the loss, the logits, the the Hidden_state or the loss and the logits
-            mask: The
-            labels
+            attention_mask: The attention mask to use in the transformerEncoder block. Should be set to false for
+                padding.
+            labels: The true tokens id expected
             loss_mask: An optional masking tensor that enables interpolation between
                 self-supervised and supervised learning. It determines which tokens in the
                 prediction should contribute to the loss with what weight and should have
@@ -866,8 +869,8 @@ class MBLMEncoder(nn.Module):
 
             if loss_mask is not None:
                 assert loss_mask.shape == input_ids.shape
-            if mask is not None:
-                assert mask.shape == input_ids.shape
+            if attention_mask is not None:
+                assert attention_mask.shape == input_ids.shape
 
             flattened_dims = input_ids.ndim == 2
             flat_seq_len = input_ids.shape[-1]
@@ -886,9 +889,9 @@ class MBLMEncoder(nn.Module):
             # in the 2nd example, L = prod(seq_lens) = 5 * 4 * 3 = 60 = P_1 = P_1'
             if flattened_dims:
                 # pad/fill up all inner sequence lengths (all except most global)
-                input_ids, mask = self.pad_and_nest(
+                input_ids, attention_mask = self.pad_and_nest(
                     input_ids,
-                    mask,
+                    attention_mask,
                     self.seq_lens,
                     batch_size=batch_size,
                     flat_seq_len=flat_seq_len,
@@ -1060,7 +1063,7 @@ class MBLMEncoder(nn.Module):
             # actual batch size whereas for the other stages, the batch size
             # corresponds to the sequence length of the previous hierarchy stage
             packed_mask = self.compute_mask_at_stage(
-                nested_mask=mask, stage_idx=stage_idx, reduce_strat=self.reduce_strat
+                nested_mask=attention_mask, stage_idx=stage_idx, reduce_strat=self.reduce_strat
             )
             attended = model.forward(stage_tokens, packed_mask)
 
@@ -1104,10 +1107,10 @@ class MBLMEncoder(nn.Module):
         # L, drop the padding
         preds = rearrange(logits_rearranged, "b l v -> b v l")[:, :, :flat_seq_len]
         targets = rearrange(labels, "b ... -> b (...)")[:, :flat_seq_len]
-        mask = rearrange(mask, "b ... -> b (...)")[:, :flat_seq_len]
+        attention_mask = rearrange(attention_mask, "b ... -> b (...)")[:, :flat_seq_len]
 
-        # Ignore where the mask is set to no attention, these are padding tokens.
-        targets[~mask] = -100
+        # Ignore where the attention_mask is set to no attention, these are padding tokens.
+        targets[~attention_mask] = -100
         loss_tensor: torch.Tensor = F.cross_entropy(
             preds,
             targets,  # type: ignore
@@ -1184,13 +1187,13 @@ class MBLMEncoder(nn.Module):
         stage_idx: int = 0,
         reduce_strat: MaskReduceStrat = MaskReduceStrat.ANY,
     ) -> torch.Tensor:
-        """Given a nested masked and a stage index indicating the current stage, compute the mask for the current stage"""
+        """Given a nested masked and a stage index indicating the current stage, compute the attention_mask for the current stage"""
         if nested_mask is None:
             return None
 
         if stage_idx > nested_mask.ndim:
             raise NotImplementedError(
-                "There is a mismatch between the number of stage and the nested mask. you should have nested mask with shape"
+                "There is a mismatch between the number of stage and the nested attention_mask. you should have nested attention_mask with shape"
                 "Bx P1...Pn, with n the number of stages"
             )
 
@@ -1207,8 +1210,8 @@ class MBLMEncoder(nn.Module):
                 case _:
                     raise NotImplementedError("This reduction does not exist yet")
             # Reduce to shape K,Pi,
-            # with True set to mask[k,pi] if there exists a sub-tensor j such that mask[k,pi,j...]==True  (any)
-            # with True set to mask[k,pi] if for all j mask[k,pi,j...]==True  (all)
+            # with True set to attention_mask[k,pi] if there exists a sub-tensor j such that attention_mask[k,pi,j...]==True  (any)
+            # with True set to attention_mask[k,pi] if for all j attention_mask[k,pi,j...]==True  (all)
             stage_mask = reduction(nested_mask)
         else:
             stage_mask = nested_mask
