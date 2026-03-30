@@ -180,7 +180,10 @@ class TestMaskedMBLM:
         assert mask.ndim == len(seq_lens) + 1  # account for batch size
 
         loss_logit = model(
-            input_ids=input_ids, mask=mask, labels=input_ids, return_type=MBLMReturnType.LOSS_LOGITS
+            input_ids=input_ids,
+            attention_mask=mask,
+            labels=input_ids,
+            return_type=MBLMReturnType.LOSS_LOGITS,
         )
         assert loss_logit[0].numel() == 1
         assert loss_logit[1].numel() == torch.prod(
