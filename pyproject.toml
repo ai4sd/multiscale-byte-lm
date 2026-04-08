@@ -1,6 +1,6 @@
 [project]
 name = "mblm"
-version = "0.4.1"
+version = "0.4.2"
 description = "Multiscale Byte Language Model"
 authors = [
     { name = "Eric Egli", email = "eric.christian.egli@ibm.com" },

@@ -569,12 +569,12 @@ class MBLM(nn.Module):
         loss_tensor = loss_tensor[:, :flat_seq_len]
 
         if loss_mask is not None:
-            # potentially apply the loss attention_mask. this does not involve
-            # broadcasting as after slicing above, the attention_mask and the loss tensor
+            # potentially apply the loss mask. this does not involve
+            # broadcasting as after slicing above, the loss mask and the loss tensor
             # have the exact same shape again
             loss_tensor *= loss_mask
 
-        # after applying the attention_mask, some elements might be 0 - they should not be
+        # after applying the loss mask, some elements might be 0 - they should not be
         # accounted for in the loss calculation
         nonzero_idxs = torch.nonzero(loss_tensor, as_tuple=True)
         loss = loss_tensor[nonzero_idxs].mean()
