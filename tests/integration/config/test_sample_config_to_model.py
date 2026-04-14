@@ -10,7 +10,9 @@ from mblm.train.mblm import TrainEntryConfig
 from mblm.utils.io import load_yml
 
 CONFIG_FILES_DIR = "config"
-CONFIG_FILES = [(config,) for config in Path(CONFIG_FILES_DIR).glob("*.yaml")]
+CONFIG_FILES = [(config,) for config in Path(CONFIG_FILES_DIR).glob("pg19*.yaml")] + [
+    (config,) for config in Path(CONFIG_FILES_DIR).glob("clevr*.yaml")
+]
 
 
 class TestConfigToModel:

@@ -30,14 +30,14 @@ from pydantic import Field
 from torch.optim import Adam, Optimizer  # type: ignore
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, LRScheduler, SequentialLR
 
-from mblm import MBLM, MBLMEncoderModelConfig, MBLMModelConfig, MBLMReturnType
 from mblm.data.dataset.clevr import Clevr
 from mblm.data.dataset.pg19 import PG19
 from mblm.data.dataset.pg19_masked import PG19Masked
 from mblm.data.datasets import DistributedDataset
 from mblm.data.types import BatchMaskedForMLM, BatchWithLossMask, ModelMode
+from mblm.model.config import MBLMEncoderModelConfig, MBLMModelConfig, MBLMReturnType
 from mblm.model.embeddings import MBLM_TOKEN_EMB_MIGRATION
-from mblm.model.mblm import MBLMEncoder
+from mblm.model.mblm import MBLM, MBLMEncoder
 from mblm.model.utils import count_params
 from mblm.train.core.config import (
     CoreIoConfig,
@@ -378,8 +378,8 @@ class MaskedTrainer(
         inputs = tokens_masked.to(device)
         mask = mask.to(device)
         labels = labels.to(device)
-        loss: torch.Tensor = model.forward(
-            masked_input_ids=inputs, mask=mask, labels=labels, return_type=MBLMReturnType.LOSS
+        loss: torch.Tensor = model.forward(  # type: ignore
+            input_ids=inputs, attention_mask=mask, labels=labels, return_type=MBLMReturnType.LOSS
         )
         return loss
 
